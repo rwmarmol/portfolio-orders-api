@@ -23,6 +23,30 @@ curl localhost:3000/health    # {"status":"ok","db":"up"}
 The database init script runs only on the first start. To reset it: `docker compose down -v`.
 If port 5432 is taken, use `DB_PORT=5433 docker compose up -d --wait` and update `DATABASE_URL`.
 
+## Container image (deployment)
+
+The `Dockerfile` builds the production image (multi-stage, runs as the non-root `node` user, runs
+`node dist/main.js` so SIGTERM triggers a graceful shutdown). It contains no configuration or secrets:
+everything comes from environment variables at runtime.
+
+```bash
+docker build -t portfolio-orders-api .
+docker run -p 3000:3000 -e DATABASE_URL='postgresql://<user>:<password>@<host>:5432/<database>?sslmode=require' portfolio-orders-api
+```
+
+| Variable | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | yes | - | Hosted Postgres connection URL; inject from the platform's secret store |
+| `PORT` | no | `3000` | |
+| `LOG_LEVEL` | no | `info` | `fatal` to `trace`, or `silent` |
+| `DATABASE_POOL_MAX` | no | `10` | Max pg connections per instance |
+
+- Logs are JSON on stdout; each request carries an `x-request-id` (propagated if sent).
+- `GET /health` returns 200 when the app and the database respond, and 503 when the database does not.
+  The image `HEALTHCHECK` uses it.
+- The API has no authentication or throttling yet (out of scope, see `docs/spec.md`): do not expose it publicly as is.
+- The docker-compose Postgres is for local development and tests only, never for production.
+
 ## Scripts
 
 | Script | Purpose |

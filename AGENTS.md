@@ -19,12 +19,14 @@ correctness, security, maintainability and operability matter from day one.
 | --- | --- |
 | `docker compose up -d --wait` | Start the local Postgres (loads `db/init/*.sql` on first start only) |
 | `docker compose down -v` | Stop and delete the local database volume (forces a re-seed) |
+| `docker build -t portfolio-orders-api .` | Build the production image (configuration only via env vars) |
 | `npm run start:dev` | Run the API in watch mode |
 | `npm run build` | Compile to `dist/` |
 | `npm test` | Run unit and e2e tests (Jest) |
 | `npm run lint` | ESLint |
 | `npm run format` | Prettier |
 
+`docker-compose.yml` contains only the local test database; production uses a remote Postgres.
 Set `DB_PORT` to publish the compose Postgres on a different host port (default 5432) and use the
 same port in `DATABASE_URL`.
 
