@@ -3,10 +3,13 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { APP_CONFIG } from './config/config.module';
-import { EnvValidationError } from './config/env.schema';
+import { EnvValidationError, parseEnv } from './config/env.schema';
 import type { Env } from './config/env.schema';
 
 async function bootstrap(): Promise<void> {
+  // Fail fast with a clean message before Nest builds the module graph.
+  parseEnv(process.env);
+
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
