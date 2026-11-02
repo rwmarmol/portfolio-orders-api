@@ -15,6 +15,28 @@
 - **Why:** sustained load, persistent database connections and in-memory caching fit long-running containers better than Lambda.
 - **Risk:** ALB and Fargate have a fixed hourly cost, so the stack is destroyed between sessions. Outbound access to the hosted database needs public subnets or a NAT gateway.
 
+### D3 — NestJS as the framework
+
+- **Decision:** NestJS (v12) on Node.js 24 LTS with strict TypeScript.
+- **Why:** modules and dependency injection give the http -> service -> repository layering and testability; first-class support for validation, filters and OpenAPI (needed in Phase 5).
+- **Risk:** Nest 12 packages are ESM-only while the project compiles to CommonJS, so Jest runs with `--experimental-vm-modules` and relies on `require(esm)` (Node >= 24). Revisit by moving the project to native ESM if this becomes painful.
+
+### D4 — Raw SQL with `pg`, no ORM
+
+- **Decision:** repositories use `pg` with parameterized SQL; no ORM or query builder for now.
+- **Why:** the schema is small, order flow needs explicit transactions and locks, and aggregations should run in SQL. Postgres lowercases unquoted identifiers, so explicit SQL avoids surprises.
+- **Risk:** more hand-written SQL and mapping code. Revisit if the schema or query count grows substantially.
+
+### D5 — Jest for tests
+
+- **Decision:** Jest with ts-jest. Unit tests for pure domain functions; e2e tests with supertest. Anything touching the database runs only against the local docker-compose Postgres.
+- **Why:** the Nest default, widely supported, enough for the spec's testing requirements.
+
+### D6 — Environment validation, logging and decimals
+
+- **Decision:** environment variables validated with `zod` at startup (error messages list variable names, never values); structured JSON logging with `pino` via `nestjs-pino`, with request ids and header redaction; `decimal.js` for money arithmetic in code.
+- **Why:** fail fast on misconfiguration without leaking credentials; operable logs from day one; no floats for money.
+
 ## Open questions
 
 _No entries yet._
