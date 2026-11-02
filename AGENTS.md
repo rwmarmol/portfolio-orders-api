@@ -27,7 +27,7 @@ correctness, security, maintainability and operability matter from day one.
 | `npm run format` | Prettier |
 
 `docker-compose.yml` contains only the local test database; production uses a remote Postgres.
-Set `DB_PORT` to publish the compose Postgres on a different host port (default 5432) and use the
+Set `DB_PORT` to publish the compose Postgres on a different host port (default 5433) and use the
 same port in `DATABASE_URL`.
 
 ## Structure and layers

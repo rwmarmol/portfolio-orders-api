@@ -21,7 +21,7 @@ curl localhost:3000/health    # {"status":"ok","db":"up"}
 ```
 
 The database init script runs only on the first start. To reset it: `docker compose down -v`.
-If port 5432 is taken, use `DB_PORT=5433 docker compose up -d --wait` and update `DATABASE_URL`.
+The database is published on host port 5433 to avoid clashing with a local Postgres on 5432. Change it with `DB_PORT` (and update `DATABASE_URL` to match).
 
 ## Container image (deployment)
 
