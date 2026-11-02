@@ -1,0 +1,20 @@
+node_modules/
+dist/
+coverage/
+
+# Environment files (only the example is versioned)
+.env
+.env.*
+!.env.example
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
