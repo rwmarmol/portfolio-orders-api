@@ -6,7 +6,17 @@ import { APP_CONFIG } from './config/config.module';
 import { EnvValidationError, parseEnv } from './config/env.schema';
 import type { Env } from './config/env.schema';
 
+function loadLocalEnvFile(): void {
+  if (process.env.NODE_ENV === 'production') return;
+  try {
+    process.loadEnvFile();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+}
+
 async function bootstrap(): Promise<void> {
+  loadLocalEnvFile();
   // Fail fast with a clean message before Nest builds the module graph.
   parseEnv(process.env);
 
