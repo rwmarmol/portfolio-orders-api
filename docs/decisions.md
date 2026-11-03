@@ -43,6 +43,25 @@
 - **Why:** the SRE team deploys the image on their own platform; the compose file has no role there. Keeping the API out of compose avoids two ways of running the app and preserves hot reload locally.
 - **Risk:** `/health` includes a database check, so an orchestrator using it as a liveness probe would restart every instance during a database outage. Use it as readiness, or add a separate liveness endpoint when SRE defines their probes.
 
+### D8 — Schema changes: constraints and indexes (migration 002)
+
+- **Decision:** migration `db/migrations/002-constraints-and-indexes.sql` adds CHECK constraints on `orders.side`, `orders.type`, `orders.status` and `orders.size > 0`, a UNIQUE constraint on `instruments.ticker`, and indexes on `orders(userid, status)` and `marketdata(instrumentid, date)`. No positions table: positions are derived from `orders`. CHECK constraints (not enums) so the allowed values can be changed with a plain `ALTER`. The CHECKs are added `NOT VALID` and then validated, to keep locks short.
+- **Versioning:** plain SQL files in `db/migrations/`, applied by `npm run db:migrate` (`scripts/migrate.mjs`), tracked in `schema_migrations`, forward-only (rollback statements are in the file header). The runner refuses non-local hosts unless an operator passes `--allow-remote`.
+
+| Change | Why | Without it |
+| --- | --- | --- |
+| `side` CHECK | Cash and positions are derived from exact `side` strings; the sign of every movement comes from `side`. | A typo (`'buy'`) is silently ignored by every balance query: wrong money, no error. |
+| `type` CHECK | MARKET vs LIMIT drives execution and the commitment rules (Q3). | An unknown type has no defined behavior. |
+| `status` CHECK | Balances use `FILLED`, commitments use `NEW`, cancellation depends on `NEW`. | A misspelled status drops an order from the calculations. |
+| `size > 0` | The sign comes from `side`; `size` is always positive. | Zero or negative sizes would invert or void the formulas and defeat holdings validation. |
+| `instruments.ticker` UNIQUE | Search and lookups by ticker assume one instrument per ticker. | Duplicates give ambiguous search results and portfolio lines. |
+| `orders(userid, status)` | Portfolio and funds/holdings validation filter by user and status, inside the per-user lock. | Sequential scan of all orders on the hot path, held under the lock. |
+| `marketdata(instrumentid, date)` | The latest close per instrument is `ORDER BY date DESC LIMIT 1`; the index serves it as a backward scan. | Full scan of `marketdata` for every price lookup. |
+
+- **Verified locally:** applies cleanly on the seed, is idempotent, rejects invalid rows, and leaves the data untouched (available pesos of user 1 still 753,000).
+- **Risk (remote databases):** applying 002 to an existing database can fail if rows violate a constraint (the migration rolls back, nothing is left half-applied), can make other writers' inserts fail if they use values the CHECKs reject, or can collide with existing object names. Run `db/migrations/002-precheck.sql` first (read-only; every query must return zero rows). 002 is not applied to a remote database without a clean precheck and an explicit decision of the user.
+- **Not included (possible follow-ups):** CHECKs let `NULL` through and the columns are still nullable, so `NOT NULL` on the core `orders` columns is the natural next step; `UNIQUE (instrumentid, date)` on `marketdata`; `instruments.type` CHECK; `price >= 0`; checking whether `NUMERIC(10,2)` is wide enough; indexes on foreign keys. For a large remote table, indexes should be created with `CREATE INDEX CONCURRENTLY`, which cannot run inside the runner's transaction.
+
 ## Open questions
 
 Resolutions of the twelve points in `docs/spec.md` ("Open questions"), confirmed by the project owner's delegate on 2026-11-03. The numbering matches the spec.

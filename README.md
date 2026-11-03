@@ -16,12 +16,21 @@ Current state: project skeleton (Phase 0) with `GET /health`. Business endpoints
 cp .env.example .env          # local defaults match docker-compose.yml
 docker compose up -d --wait   # Postgres with schema and seed data
 npm install
+npm run db:migrate            # constraints and indexes (see docs/decisions.md, D8)
 npm run start:dev
 curl localhost:3000/health    # {"status":"ok","db":"up"}
 ```
 
 The database init script runs only on the first start. To reset it: `docker compose down -v`.
 The database is published on host port 5433 to avoid clashing with a local Postgres on 5432. Change it with `DB_PORT` (and update `DATABASE_URL` to match).
+
+## Database migrations
+
+SQL files in `db/migrations/`, applied in order by `npm run db:migrate` and tracked in the
+`schema_migrations` table. The runner only accepts a local `DATABASE_URL` (`localhost`, `127.0.0.1`,
+`::1`). Before applying a migration to any remote database, run its read-only precheck (for
+example `db/migrations/002-precheck.sql`; every query must return zero rows) and get an explicit
+decision from the project owner.
 
 ## Container image (deployment)
 
@@ -54,6 +63,7 @@ docker run -p 3000:3000 -e DATABASE_URL='postgresql://<user>:<password>@<host>:5
 | `npm run start:dev` | API in watch mode |
 | `npm run build` | Compile to `dist/` |
 | `npm test` | Unit and e2e tests |
+| `npm run db:migrate` | Apply pending SQL migrations (local database only) |
 | `npm run lint` | ESLint |
 | `npm run format` | Prettier |
 

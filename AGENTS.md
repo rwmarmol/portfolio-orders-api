@@ -20,6 +20,7 @@ correctness, security, maintainability and operability matter from day one.
 | `docker compose up -d --wait` | Start the local Postgres (loads `db/init/*.sql` on first start only) |
 | `docker compose down -v` | Stop and delete the local database volume (forces a re-seed) |
 | `docker build -t portfolio-orders-api .` | Build the production image (configuration only via env vars) |
+| `npm run db:migrate` | Apply pending migrations from `db/migrations/` (runner refuses non-local hosts) |
 | `npm run start:dev` | Run the API in watch mode |
 | `npm run build` | Compile to `dist/` |
 | `npm test` | Run unit and e2e tests (Jest) |
@@ -42,7 +43,9 @@ src/
   health/          GET /health
   domain/          pure functions only (no I/O, no Nest, no pg)
 test/              e2e tests
-db/init/           SQL loaded by docker compose on first start
+db/init/           baseline schema and seed, loaded by docker compose on first start
+db/migrations/     versioned SQL migrations (+ read-only prechecks); scripts/migrate.mjs applies them
+scripts/           operational scripts (migration runner)
 docs/              spec and decisions
 ```
 
