@@ -67,7 +67,13 @@
 - **Decision:** `src/domain/` holds pure functions (ledger, cost basis, returns, latest quotes, order quantity and evaluation, portfolio assembly) implementing Q2, Q3, Q8, Q10 and Q11. ESLint forbids framework, driver and logging imports there. Money enters as the NUMERIC strings returned by `pg` and is computed with `decimal.js` (precision 40, half-up). The domain does not round: rounding for presentation belongs to the HTTP layer. Domain errors (`DomainError`) are mapped to HTTP errors by services.
 - **Why:** the calculations can be unit tested in isolation against the seed reference values (available pesos 753,000; positions 40, -10, 500) with no database.
 - **Limits enforced:** a quantity must fit the `orders.size` INT column (maximum 2,147,483,647).
-- **Unconfirmed (my assumption, needs the user's confirmation):** if a position has no market data, `buildPortfolio` throws `MissingMarketDataError` instead of reporting a partial total. It was chosen to avoid silently under-reporting the account value; the alternative is to return the position with a null market value and exclude it from the total.
+- **Confirmed — positions without market data:** `buildPortfolio` does not fail. The position is still returned, with `marketValue`, `dailyReturnPct` and `totalReturnPct` set to `null` (its `quantity` and `averageCost` are kept), it is left out of `totalValue`, and the portfolio carries `totalIsPartial: true` (`false` when every position has a price). A warning with the affected instrument must be logged: the domain stays free of logging imports, so `buildPortfolio` takes an `onMissingMarketData(instrumentId)` callback and the service passes one that calls `logger.warn`. The service that wires it arrives in Phase 3.
+
+### D10 — MARKET orders on an instrument without market data
+
+- **Decision:** a MARKET order (BUY or SELL) on an instrument with no market data is stored as `REJECTED` with the reason "no market price available" (code `NO_MARKET_PRICE`). The check runs before the funds and holdings validation.
+- **Why:** a MARKET order executes at the latest `close`; without one there is no price to execute at, and per Q4 a business rejection is stored and returned as 201 with `status: REJECTED` and the reason.
+- **Pending details (not decided):** (1) by amount, the quantity cannot be derived without a price, so the order has no valid `size` to store (`size > 0` is enforced since D8) — should it be a 400 instead? (2) What `price` is stored on that rejected order — `NULL`? (3) The wording of the other reasons ("insufficient funds", "insufficient holdings") is my proposal.
 
 ## Open questions
 
