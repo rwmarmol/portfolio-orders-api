@@ -56,13 +56,17 @@ Resolutions of the twelve points in `docs/spec.md` ("Open questions"), confirmed
 
 - **Decision:** each position exposes two fields: `dailyReturnPct` (`close` vs `previousClose`) and `totalReturnPct` (against the average purchase cost).
 - **Why:** daily return is the only formula the spec defines; total return answers what "total" suggests.
-- **Pending detail:** the exact average-cost formula is not defined yet (see "Follow-up questions").
+- **Average cost:** moving weighted average cost. Walk the instrument's `FILLED` orders in chronological order (`datetime`, then `id`). A purchase updates the average; a sale reduces the quantity without changing the average; if the quantity reaches 0 the average is reset.
+- **Formula:** `totalReturnPct = (close - average) / average * 100`. It is `null` when the quantity is <= 0, which covers instrument 31 (F1).
 
 ### Q3 — LIMIT orders and funds
 
-- **Decision:** funds (or holdings) are validated when the LIMIT order is created, discounting what is already committed by other `NEW` LIMIT orders. Nothing is reserved in the table.
-- **Why:** there is no execution engine (Q5), so a `NEW` LIMIT is never executed; a physical reservation would lock funds forever, while discounting commitments still prevents over-committing.
-- **Pending detail:** whether MARKET orders also discount commitments (see "Follow-up questions").
+- **Decision:** every new order, MARKET included, is validated against the balance net of commitments from `NEW` LIMIT orders. There is no reservations table.
+  - Buyable pesos = `FILLED` cash minus the sum of `size * price` of `NEW` LIMIT BUY orders.
+  - Sellable shares = `FILLED` holdings minus the sum of `size` of `NEW` LIMIT SELL orders.
+  - The computation runs inside the order transaction, under the per-user lock.
+- **Portfolio response:** `availablePesos` (`FILLED` cash) and `committedPesos` (committed by `NEW` LIMIT BUY orders).
+- **Why:** there is no execution engine (Q5), so a `NEW` LIMIT is never executed; a physical reservation would lock funds forever, while discounting commitments still prevents over-committing. Applying it to MARKET orders too keeps a single rule.
 
 ### Q4 — Rejections
 
@@ -107,14 +111,9 @@ Resolutions of the twelve points in `docs/spec.md` ("Open questions"), confirmed
 ### Q12 — Search
 
 - **Decision:** `GET /instruments?q=`: partial, case-insensitive match on ticker or name, excluding ARS, with a result limit.
+- **Limit:** 20 results by default, 50 at most.
+- **Ordering:** exact ticker match, then ticker starting with the query, then name containing the query; alphabetical within each group.
 - **Why:** simple and enough for 66 instruments.
-- **Defaults to confirm:** limit 20 (maximum 50); exact ticker match first, then ticker alphabetical.
-
-### Follow-up questions (not decided)
-
-1. **Average cost (Q2):** the proposal is the size-weighted average price of all `FILLED` BUY orders, ignoring sells, and `null` when the position has no purchases. Is that the intended formula?
-2. **MARKET vs commitments (Q3):** should a MARKET BUY be validated against available pesos net of `NEW` LIMIT BUY commitments (and a MARKET SELL against holdings net of `NEW` LIMIT SELLs), or against the full balance?
-3. **Search limit (Q12):** confirm the default of 20, the maximum of 50 and the ordering above.
 
 ## Findings and oddities
 
