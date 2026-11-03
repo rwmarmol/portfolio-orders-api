@@ -58,6 +58,7 @@ Resolutions of the twelve points in `docs/spec.md` ("Open questions"), confirmed
 - **Why:** daily return is the only formula the spec defines; total return answers what "total" suggests.
 - **Average cost:** moving weighted average cost. Walk the instrument's `FILLED` orders in chronological order (`datetime`, then `id`). A purchase updates the average; a sale reduces the quantity without changing the average; if the quantity reaches 0 the average is reset.
 - **Formula:** `totalReturnPct = (close - average) / average * 100`. It is `null` when the quantity is <= 0, which covers instrument 31 (F1).
+- **Purchase while quantity is <= 0:** the purchase first covers the shortfall. If the resulting quantity is > 0, the average is the price of that purchase; if it is still <= 0, the average is `null`. With quantity > 0 the moving weighted average applies.
 
 ### Q3 — LIMIT orders and funds
 
@@ -80,7 +81,7 @@ Resolutions of the twelve points in `docs/spec.md` ("Open questions"), confirmed
 
 ### Q6 — CASH_IN and CASH_OUT
 
-- **Decision:** a separate, optional endpoint. `CASH_OUT` validates the available balance.
+- **Decision:** a separate, optional endpoint. `CASH_OUT` validates against the buyable balance (`FILLED` cash minus the pesos committed by `NEW` LIMIT BUY orders, see Q3).
 - **Why:** keeps the orders endpoint limited to BUY/SELL on tradable instruments.
 
 ### Q7 — Identifying the user
