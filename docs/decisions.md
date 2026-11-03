@@ -62,6 +62,13 @@
 - **Risk (remote databases):** applying 002 to an existing database can fail if rows violate a constraint (the migration rolls back, nothing is left half-applied), can make other writers' inserts fail if they use values the CHECKs reject, or can collide with existing object names. Run `db/migrations/002-precheck.sql` first (read-only; every query must return zero rows). 002 is not applied to a remote database without a clean precheck and an explicit decision of the user.
 - **Not included (possible follow-ups):** CHECKs let `NULL` through and the columns are still nullable, so `NOT NULL` on the core `orders` columns is the natural next step; `UNIQUE (instrumentid, date)` on `marketdata`; `instruments.type` CHECK; `price >= 0`; checking whether `NUMERIC(10,2)` is wide enough; indexes on foreign keys. For a large remote table, indexes should be created with `CREATE INDEX CONCURRENTLY`, which cannot run inside the runner's transaction.
 
+### D9 — Domain layer conventions
+
+- **Decision:** `src/domain/` holds pure functions (ledger, cost basis, returns, latest quotes, order quantity and evaluation, portfolio assembly) implementing Q2, Q3, Q8, Q10 and Q11. ESLint forbids framework, driver and logging imports there. Money enters as the NUMERIC strings returned by `pg` and is computed with `decimal.js` (precision 40, half-up). The domain does not round: rounding for presentation belongs to the HTTP layer. Domain errors (`DomainError`) are mapped to HTTP errors by services.
+- **Why:** the calculations can be unit tested in isolation against the seed reference values (available pesos 753,000; positions 40, -10, 500) with no database.
+- **Limits enforced:** a quantity must fit the `orders.size` INT column (maximum 2,147,483,647).
+- **Unconfirmed (my assumption, needs the user's confirmation):** if a position has no market data, `buildPortfolio` throws `MissingMarketDataError` instead of reporting a partial total. It was chosen to avoid silently under-reporting the account value; the alternative is to return the position with a null market value and exclude it from the total.
+
 ## Open questions
 
 Resolutions of the twelve points in `docs/spec.md` ("Open questions"), confirmed by the project owner's delegate on 2026-11-03. The numbering matches the spec.
