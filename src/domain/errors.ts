@@ -11,10 +11,3 @@ export class DomainError extends Error {
 
 /** The order request itself is invalid (maps to HTTP 400, the order is not stored). */
 export class InvalidOrderInputError extends DomainError {}
-
-/** A position cannot be valued because the instrument has no market data. */
-export class MissingMarketDataError extends DomainError {
-  constructor(readonly instrumentId: number) {
-    super('MISSING_MARKET_DATA', `No market data for instrument ${instrumentId}`);
-  }
-}

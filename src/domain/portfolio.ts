@@ -1,6 +1,5 @@
 import { costBasis } from './average-cost';
 import { D, Dec } from './decimal';
-import { MissingMarketDataError } from './errors';
 import { committedPesos, filledCash, openPositions } from './ledger';
 import { dailyReturnPct, totalReturnPct } from './returns';
 import type { MarketQuote, OrderRecord } from './types';
@@ -8,9 +7,12 @@ import type { MarketQuote, OrderRecord } from './types';
 export interface PositionView {
   instrumentId: number;
   quantity: number;
-  marketValue: Dec;
+  /** Null when the instrument has no market data. */
+  marketValue: Dec | null;
   averageCost: Dec | null;
+  /** Null when the instrument has no market data (or no usable previous close). */
   dailyReturnPct: Dec | null;
+  /** Null when the instrument has no market data or no average cost. */
   totalReturnPct: Dec | null;
 }
 
@@ -19,29 +21,53 @@ export interface Portfolio {
   availablePesos: Dec;
   /** Pesos committed by NEW LIMIT BUY orders. */
   committedPesos: Dec;
-  /** availablePesos plus the market value of all positions. */
+  /** availablePesos plus the market value of the positions that have a price. */
   totalValue: Dec;
+  /** True when at least one position has no market data and is left out of `totalValue`. */
+  totalIsPartial: boolean;
   positions: PositionView[];
+}
+
+export interface BuildPortfolioOptions {
+  /**
+   * Called once per position without market data. The domain stays free of logging imports:
+   * callers pass a function that logs a warning with the instrument id.
+   */
+  onMissingMarketData?: (instrumentId: number) => void;
 }
 
 /**
  * Builds a user's portfolio from their orders and the latest quote per instrument. Negative
- * positions are shown as computed (Q10), so they reduce the total value. Throws
- * MissingMarketDataError rather than silently under-reporting a position.
+ * positions are shown as computed (Q10), so they reduce the total value. A position without
+ * market data is still returned, with null market value and returns; it is left out of the
+ * total and `totalIsPartial` is set (D9).
  */
 export function buildPortfolio(
   orders: readonly OrderRecord[],
   quotes: ReadonlyMap<number, MarketQuote>,
+  { onMissingMarketData }: BuildPortfolioOptions = {},
 ): Portfolio {
   const availablePesos = filledCash(orders);
   let totalValue = availablePesos;
+  let totalIsPartial = false;
 
-  const positions = openPositions(orders).map(({ instrumentId, quantity }) => {
+  const positions = openPositions(orders).map(({ instrumentId, quantity }): PositionView => {
+    const { averageCost } = costBasis(orders, instrumentId);
     const quote = quotes.get(instrumentId);
-    if (quote === undefined) throw new MissingMarketDataError(instrumentId);
+    if (quote === undefined) {
+      totalIsPartial = true;
+      onMissingMarketData?.(instrumentId);
+      return {
+        instrumentId,
+        quantity,
+        marketValue: null,
+        averageCost,
+        dailyReturnPct: null,
+        totalReturnPct: null,
+      };
+    }
     const marketValue = new D(quote.close).times(quantity);
     totalValue = totalValue.plus(marketValue);
-    const { averageCost } = costBasis(orders, instrumentId);
     return {
       instrumentId,
       quantity,
@@ -52,5 +78,11 @@ export function buildPortfolio(
     };
   });
 
-  return { availablePesos, committedPesos: committedPesos(orders), totalValue, positions };
+  return {
+    availablePesos,
+    committedPesos: committedPesos(orders),
+    totalValue,
+    totalIsPartial,
+    positions,
+  };
 }
