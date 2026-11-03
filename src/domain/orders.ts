@@ -68,7 +68,14 @@ export function assertTradable(instrument: { type: string }): void {
   }
 }
 
-export type RejectionReason = 'INSUFFICIENT_FUNDS' | 'INSUFFICIENT_HOLDINGS';
+export type RejectionReason = 'INSUFFICIENT_FUNDS' | 'INSUFFICIENT_HOLDINGS' | 'NO_MARKET_PRICE';
+
+/** Human-readable reason returned to the client with a REJECTED order. */
+export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
+  INSUFFICIENT_FUNDS: 'insufficient funds',
+  INSUFFICIENT_HOLDINGS: 'insufficient holdings',
+  NO_MARKET_PRICE: 'no market price available',
+};
 
 export interface OrderEvaluation {
   status: 'FILLED' | 'NEW' | 'REJECTED';
@@ -79,8 +86,11 @@ export interface EvaluateOrderInput {
   side: 'BUY' | 'SELL';
   type: OrderType;
   size: number;
-  /** Execution price for MARKET (latest close), user's price for LIMIT. */
-  price: DecValue;
+  /**
+   * Execution price for MARKET (latest close, null when the instrument has no market data),
+   * user's price for LIMIT (required).
+   */
+  price: DecValue | null;
   /** `buyablePesos` of the user, already net of NEW LIMIT BUY commitments. */
   buyablePesos: DecValue;
   /** `sellableShares` of the user for the instrument, already net of NEW LIMIT SELL commitments. */
@@ -88,11 +98,15 @@ export interface EvaluateOrderInput {
 }
 
 /**
- * Outcome of a new BUY/SELL order: REJECTED when funds or holdings are insufficient, otherwise
- * FILLED for MARKET and NEW for LIMIT. Must run inside the order transaction, under the
+ * Outcome of a new BUY/SELL order: REJECTED when a MARKET order has no market price (D10) or
+ * when funds or holdings are insufficient, otherwise FILLED for MARKET and NEW for LIMIT. Must run inside the order transaction, under the
  * per-user lock, with balances computed in that same transaction.
  */
 export function evaluateOrder(input: EvaluateOrderInput): OrderEvaluation {
+  if (input.price === null) {
+    if (input.type === 'MARKET') return { status: 'REJECTED', reason: 'NO_MARKET_PRICE' };
+    throw new InvalidOrderInputError('INVALID_PRICE', 'A LIMIT order requires a price');
+  }
   if (input.side === 'BUY') {
     const cost: Dec = new D(input.price).times(input.size);
     if (cost.gt(input.buyablePesos)) return { status: 'REJECTED', reason: 'INSUFFICIENT_FUNDS' };

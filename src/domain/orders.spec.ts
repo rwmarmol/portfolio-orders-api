@@ -1,5 +1,5 @@
 import { InvalidOrderInputError } from './errors';
-import { assertTradable, evaluateOrder, resolveQuantity } from './orders';
+import { assertTradable, evaluateOrder, REJECTION_MESSAGES, resolveQuantity } from './orders';
 
 describe('resolveQuantity', () => {
   it('uses an exact quantity', () => {
@@ -65,5 +65,30 @@ describe('evaluateOrder', () => {
     expect(
       evaluateOrder({ ...base, size: 1, side: 'SELL', type: 'MARKET', sellableShares: -10 }).status,
     ).toBe('REJECTED');
+  });
+
+  describe('without a market price (D10)', () => {
+    it.each(['BUY', 'SELL'] as const)('rejects a MARKET %s with NO_MARKET_PRICE', (side) => {
+      const result = evaluateOrder({ ...base, side, type: 'MARKET', price: null });
+      expect(result).toEqual({ status: 'REJECTED', reason: 'NO_MARKET_PRICE' });
+      expect(REJECTION_MESSAGES.NO_MARKET_PRICE).toBe('no market price available');
+    });
+
+    it('checks the price before funds and holdings', () => {
+      const result = evaluateOrder({
+        ...base,
+        side: 'SELL',
+        type: 'MARKET',
+        price: null,
+        sellableShares: 0,
+      });
+      expect(result.reason).toBe('NO_MARKET_PRICE');
+    });
+
+    it('treats a LIMIT order without a price as invalid input', () => {
+      expect(() => evaluateOrder({ ...base, side: 'BUY', type: 'LIMIT', price: null })).toThrow(
+        InvalidOrderInputError,
+      );
+    });
   });
 });
