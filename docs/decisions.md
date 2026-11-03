@@ -45,8 +45,80 @@
 
 ## Open questions
 
-_No entries yet._
+Resolutions of the twelve points in `docs/spec.md` ("Open questions"), confirmed by the project owner's delegate on 2026-11-03. The numbering matches the spec.
+
+### Q1 — Cancellation
+
+- **Decision:** implement an endpoint to cancel orders, only when `NEW` (becomes `CANCELLED`). Built after the core.
+- **Why:** the rules are already defined and the cost is low; the roadmap marks it optional.
+
+### Q2 — Return
+
+- **Decision:** each position exposes two fields: `dailyReturnPct` (`close` vs `previousClose`) and `totalReturnPct` (against the average purchase cost).
+- **Why:** daily return is the only formula the spec defines; total return answers what "total" suggests.
+- **Pending detail:** the exact average-cost formula is not defined yet (see "Follow-up questions").
+
+### Q3 — LIMIT orders and funds
+
+- **Decision:** funds (or holdings) are validated when the LIMIT order is created, discounting what is already committed by other `NEW` LIMIT orders. Nothing is reserved in the table.
+- **Why:** there is no execution engine (Q5), so a `NEW` LIMIT is never executed; a physical reservation would lock funds forever, while discounting commitments still prevents over-committing.
+- **Pending detail:** whether MARKET orders also discount commitments (see "Follow-up questions").
+
+### Q4 — Rejections
+
+- **Decision:** a business rejection (funds or holdings) returns HTTP 201 with the order stored as `REJECTED` and the reason in the response body. Invalid input returns 400 and is not stored.
+- **Why:** the order is persisted either way, and per D1 the response carries the final status. The reason is not stored (no column).
+
+### Q5 — LIMIT execution
+
+- **Decision:** out of scope. A LIMIT stays `NEW`. The `FILLED` LIMIT in the seed data is just data.
+- **Why:** the spec excludes market simulation.
+
+### Q6 — CASH_IN and CASH_OUT
+
+- **Decision:** a separate, optional endpoint. `CASH_OUT` validates the available balance.
+- **Why:** keeps the orders endpoint limited to BUY/SELL on tradable instruments.
+
+### Q7 — Identifying the user
+
+- **Decision:** `userId` goes in the path: `/users/:userId/portfolio` and `/users/:userId/orders`.
+- **Why:** explicit, and easy to replace by the authenticated identity later.
+
+### Q8 — Amount that does not cover one share
+
+- **Decision:** 400 when the amount yields quantity 0, and 400 when both quantity and amount are sent. Neither sent is also invalid.
+- **Why:** these are invalid requests, not business rejections, so they are not stored.
+
+### Q9 — Price stored on MARKET orders
+
+- **Decision:** the `close` used for the execution is stored as `price`.
+- **Why:** the cash and position formulas use `size × price`.
+
+### Q10 — Negative position
+
+- **Decision:** shown as computed. Documented as a seed-data anomaly (see "Findings and oddities"). New sales are prevented by validating against holdings.
+- **Why:** hiding it would conceal a data problem.
+
+### Q11 — ARS
+
+- **Decision:** appears only as `availablePesos`, never as a position. BUY or SELL on ARS returns 400.
+- **Why:** cash is already modeled as the balance.
+
+### Q12 — Search
+
+- **Decision:** `GET /instruments?q=`: partial, case-insensitive match on ticker or name, excluding ARS, with a result limit.
+- **Why:** simple and enough for 66 instruments.
+- **Defaults to confirm:** limit 20 (maximum 50); exact ticker match first, then ticker alphabetical.
+
+### Follow-up questions (not decided)
+
+1. **Average cost (Q2):** the proposal is the size-weighted average price of all `FILLED` BUY orders, ignoring sells, and `null` when the position has no purchases. Is that the intended formula?
+2. **MARKET vs commitments (Q3):** should a MARKET BUY be validated against available pesos net of `NEW` LIMIT BUY commitments (and a MARKET SELL against holdings net of `NEW` LIMIT SELLs), or against the full balance?
+3. **Search limit (Q12):** confirm the default of 20, the maximum of 50 and the ordering above.
 
 ## Findings and oddities
 
-_No entries yet._
+### F1 — Negative position in seed data
+
+- **Finding:** user 1 has `FILLED` orders that buy 20 and sell 30 of instrument 31, giving a position of -10. The seed also has a `FILLED` LIMIT order (instrument 31) and MARKET prices that do not match `marketdata.close`.
+- **Handling:** the position is shown as computed (Q10). Because SELL orders are validated against holdings, any new SELL on that instrument for that user is rejected.
