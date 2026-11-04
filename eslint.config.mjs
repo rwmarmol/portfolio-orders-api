@@ -35,6 +35,11 @@ export default tseslint.config(
     },
   },
   {
+    // CommonJS config and setup files are loaded by Jest with require().
+    files: ['**/*.js'],
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
     languageOptions: { globals: { ...globals.node, ...globals.jest } },
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
