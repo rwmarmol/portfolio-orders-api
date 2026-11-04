@@ -11,7 +11,7 @@ correctness, security, maintainability and operability matter from day one.
 - Full scope, business rules, data model, open questions and roadmap: `docs/spec.md`
 - Confirmed decisions: `docs/decisions.md`
 - Stack: Node.js 24 LTS, TypeScript (strict), NestJS, raw SQL with `pg` (no ORM), Jest, ESLint, Prettier, npm
-- Language: everything written in the repo (code, comments, docs, commit messages) is in English.
+- Language: everything written in the repo (code, comments, docs, commit messages) is in English, with one explicit exception requested by the project owner: `docs/decisiones-y-consideraciones.md` is in Spanish. When a decision changes, update `docs/decisions.md` (English, formal) and keep that document in sync.
 
 ## Commands
 

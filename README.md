@@ -2,6 +2,9 @@
 
 REST service for an investment platform: portfolio, instrument search and order submission.
 See `docs/spec.md` for the scope and roadmap, and `docs/decisions.md` for design decisions.
+`docs/decisiones-y-consideraciones.md` explains those decisions in plain Spanish, split into business
+and technical sections (including the database changes, the local-only database policy, and what was
+considered but not implemented).
 
 ## API
 
