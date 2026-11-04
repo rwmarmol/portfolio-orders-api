@@ -4,9 +4,8 @@ import { Pool } from 'pg';
 import { APP_CONFIG } from '../config/config.module';
 import type { Env } from '../config/env.schema';
 import { registerPgTypeParsers } from './pg-types';
+import { PG_POOL } from './tokens';
 import { TransactionRunner } from './transaction-runner';
-
-export const PG_POOL = Symbol('PG_POOL');
 
 @Injectable()
 class PoolLifecycle implements OnApplicationShutdown {

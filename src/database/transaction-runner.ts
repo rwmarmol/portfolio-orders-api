@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
-import { PG_POOL } from './database.module';
+import { PG_POOL } from './tokens';
 
 export interface TransactionOptions {
   isolation?: 'READ COMMITTED' | 'REPEATABLE READ';

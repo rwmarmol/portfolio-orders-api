@@ -4,7 +4,7 @@ import { Logger } from 'nestjs-pino';
 import request from 'supertest';
 import { HealthController } from '../src/health/health.controller';
 import { HealthService } from '../src/health/health.service';
-import { PG_POOL } from '../src/database/database.module';
+import { PG_POOL } from '../src/database/tokens';
 
 async function createApp(query: jest.Mock): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
