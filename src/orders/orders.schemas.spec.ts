@@ -1,0 +1,41 @@
+import { createOrderSchema } from './orders.schemas';
+
+const base = { instrumentId: 47, side: 'BUY', type: 'MARKET', quantity: 10 };
+
+describe('createOrderSchema', () => {
+  it('accepts a MARKET order by quantity', () => {
+    expect(createOrderSchema.parse(base)).toEqual(base);
+  });
+
+  it('accepts a LIMIT order by amount and normalizes money to strings', () => {
+    const parsed = createOrderSchema.parse({
+      instrumentId: 47,
+      side: 'SELL',
+      type: 'LIMIT',
+      amount: 1500.5,
+      price: '930.10',
+    });
+    expect(parsed).toMatchObject({ amount: '1500.5', price: '930.10' });
+  });
+
+  it.each([
+    ['both quantity and amount', { ...base, amount: '100' }],
+    ['neither quantity nor amount', { instrumentId: 47, side: 'BUY', type: 'MARKET' }],
+    ['LIMIT without price', { ...base, type: 'LIMIT' }],
+    ['MARKET with price', { ...base, price: '10' }],
+    ['fractional quantity', { ...base, quantity: 1.5 }],
+    ['zero quantity', { ...base, quantity: 0 }],
+    ['quantity above INT range', { ...base, quantity: 2_147_483_648 }],
+    ['invalid side', { ...base, side: 'CASH_IN' }],
+    ['invalid type', { ...base, type: 'STOP' }],
+    ['unknown field', { ...base, status: 'FILLED' }],
+    ['price with 3 decimals', { ...base, type: 'LIMIT', quantity: 1, price: '10.123' }],
+    ['negative price', { ...base, type: 'LIMIT', price: '-5' }],
+    ['zero price', { ...base, type: 'LIMIT', price: '0.00' }],
+    ['price in exponent notation', { ...base, type: 'LIMIT', price: 1e21 }],
+    ['price above NUMERIC(10,2)', { ...base, type: 'LIMIT', price: '100000000.00' }],
+    ['non-numeric amount', { instrumentId: 47, side: 'BUY', type: 'MARKET', amount: 'abc' }],
+  ])('rejects %s', (_label, input) => {
+    expect(createOrderSchema.safeParse(input).success).toBe(false);
+  });
+});
