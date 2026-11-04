@@ -3,6 +3,8 @@ import { Logger } from 'nestjs-pino';
 import { Pool } from 'pg';
 import { APP_CONFIG } from '../config/config.module';
 import type { Env } from '../config/env.schema';
+import { registerPgTypeParsers } from './pg-types';
+import { TransactionRunner } from './transaction-runner';
 
 export const PG_POOL = Symbol('PG_POOL');
 
@@ -22,6 +24,7 @@ class PoolLifecycle implements OnApplicationShutdown {
       provide: PG_POOL,
       inject: [APP_CONFIG, Logger],
       useFactory: (env: Env, logger: Logger): Pool => {
+        registerPgTypeParsers();
         const pool = new Pool({
           connectionString: env.DATABASE_URL,
           max: env.DATABASE_POOL_MAX,
@@ -35,7 +38,8 @@ class PoolLifecycle implements OnApplicationShutdown {
       },
     },
     PoolLifecycle,
+    TransactionRunner,
   ],
-  exports: [PG_POOL],
+  exports: [PG_POOL, TransactionRunner],
 })
 export class DatabaseModule {}
