@@ -1,0 +1,939 @@
+{
+  "info": {
+    "name": "Portfolio & Orders API",
+    "description": "One request per case, with basic assertions. Use it with the `local` environment against the local docker-compose Postgres: the order requests WRITE orders for user 1, so never point `baseUrl` at an API connected to a shared or remote database. Reset the data with `docker compose down -v`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('database is up', () => pm.expect(pm.response.json()).to.eql({ status: 'ok', db: 'up' }));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        },
+        "description": "Liveness and database check. Returns 503 with `db: down` when the database does not answer."
+      }
+    },
+    {
+      "name": "Portfolio",
+      "description": "",
+      "item": [
+        {
+          "name": "Portfolio of a user",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('money fields are 2-decimal strings', () => ['availablePesos', 'committedPesos', 'totalValue'].forEach((k) => pm.expect(body[k]).to.match(/^-?\\d+\\.\\d{2}$/)));",
+                  "pm.test('total value is cash plus the priced positions', () => {",
+                  "  const sum = body.positions.reduce((acc, p) => acc + (p.marketValue === null ? 0 : Number(p.marketValue)), Number(body.availablePesos));",
+                  "  pm.expect(Math.abs(sum - Number(body.totalValue))).to.be.below(0.01 * (body.positions.length + 1));",
+                  "});",
+                  "pm.test('totalIsPartial is a boolean', () => pm.expect(body.totalIsPartial).to.be.a('boolean'));",
+                  "pm.test('seed position of instrument 31 stays negative and has no total return', () => {",
+                  "  const p = body.positions.find((x) => x.instrumentId === 31);",
+                  "  pm.expect(p.quantity).to.eql(-10);",
+                  "  pm.expect(p.averageCost).to.eql(null);",
+                  "  pm.expect(p.totalReturnPct).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/portfolio",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "portfolio"]
+            },
+            "description": "Available pesos, pesos committed by NEW LIMIT BUY orders, total value and positions with returns. Assertions are relative so the request passes after other requests have created orders. Exact seed values (753000.00 / 125500.00 / 40 / -10 / 500) hold on a freshly seeded database only."
+          }
+        },
+        {
+          "name": "Portfolio of an unknown user",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is NOT_FOUND', () => pm.expect(body.error).to.eql('NOT_FOUND'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{unknownUserId}}/portfolio",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{unknownUserId}}", "portfolio"]
+            },
+            "description": "A user that does not exist is a 404."
+          }
+        },
+        {
+          "name": "Portfolio with a malformed user id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is VALIDATION_ERROR', () => pm.expect(body.error).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/abc/portfolio",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "abc", "portfolio"]
+            },
+            "description": "The path parameter must be a positive integer."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Instruments",
+      "description": "",
+      "item": [
+        {
+          "name": "Search by ticker prefix or name",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const items = pm.response.json().items;",
+                  "pm.test('returns matches', () => pm.expect(items.length).to.be.above(0));",
+                  "pm.test('every item matches the query in ticker or name (case-insensitive)', () =>",
+                  "  items.forEach((i) => pm.expect((i.ticker + ' ' + i.name).toLowerCase()).to.include('pa')));",
+                  "pm.test('ticker prefix matches come first', () => pm.expect(items[0].ticker.toLowerCase().startsWith('pa')).to.eql(true));",
+                  "pm.test('the cash instrument is never returned', () => items.forEach((i) => pm.expect(i.type).to.not.eql('MONEDA')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/instruments?q=pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["instruments"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "pa"
+                }
+              ]
+            },
+            "description": "Partial, case-insensitive match. Order: exact ticker, ticker prefix, name contains, ticker contains."
+          }
+        },
+        {
+          "name": "Search with a custom limit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('respects the limit', () => pm.expect(pm.response.json().items).to.have.lengthOf(3));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/instruments?q=a&limit=3",
+              "host": ["{{baseUrl}}"],
+              "path": ["instruments"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "a"
+                },
+                {
+                  "key": "limit",
+                  "value": "3"
+                }
+              ]
+            },
+            "description": "Default limit is 20, maximum 50."
+          }
+        },
+        {
+          "name": "Search for ARS returns nothing",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ARS is excluded', () => pm.expect(pm.response.json().items).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/instruments?q=ars",
+              "host": ["{{baseUrl}}"],
+              "path": ["instruments"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "ars"
+                }
+              ]
+            },
+            "description": "ARS is the cash instrument and is not tradable."
+          }
+        },
+        {
+          "name": "Search without q",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is VALIDATION_ERROR', () => pm.expect(body.error).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/instruments",
+              "host": ["{{baseUrl}}"],
+              "path": ["instruments"]
+            },
+            "description": "`q` is required."
+          }
+        },
+        {
+          "name": "Search with a limit above the maximum",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is VALIDATION_ERROR', () => pm.expect(body.error).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/instruments?q=a&limit=51",
+              "host": ["{{baseUrl}}"],
+              "path": ["instruments"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "a"
+                },
+                {
+                  "key": "limit",
+                  "value": "51"
+                }
+              ]
+            },
+            "description": "A limit above 50 is rejected, not clamped."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders - accepted",
+      "description": "Valid orders. They are written to the database: run them against the local compose Postgres only.",
+      "item": [
+        {
+          "name": "MARKET BUY by quantity",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const order = pm.response.json();",
+                  "pm.test('order is stored as FILLED', () => pm.expect(order.status).to.eql('FILLED'));",
+                  "pm.test('order has an id and an ISO datetime', () => {",
+                  "  pm.expect(order.id).to.be.a('number');",
+                  "  pm.expect(new Date(order.datetime).toISOString()).to.eql(order.datetime);",
+                  "});",
+                  "pm.test('executes at a 2-decimal market price', () => pm.expect(order.price).to.match(/^-?\\d+\\.\\d{2}$/));",
+                  "pm.test('has no rejection reason', () => pm.expect(order.reason).to.eql(undefined));",
+                  "pm.test('quantity is the one requested', () => pm.expect(order.size).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "Executes immediately at the latest close, which is stored as the order price.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "LIMIT BUY by quantity",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const order = pm.response.json();",
+                  "pm.test('order is stored as NEW', () => pm.expect(order.status).to.eql('NEW'));",
+                  "pm.test('order has an id and an ISO datetime', () => {",
+                  "  pm.expect(order.id).to.be.a('number');",
+                  "  pm.expect(new Date(order.datetime).toISOString()).to.eql(order.datetime);",
+                  "});",
+                  "pm.test('keeps the price sent by the user', () => pm.expect(order.price).to.eql('100.00'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "Stored as NEW with the user's price. Nothing executes it (no market simulation); its pesos count as committed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"quantity\": 1,\n  \"price\": \"100.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "MARKET BUY by amount",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const order = pm.response.json();",
+                  "pm.test('order is stored as FILLED', () => pm.expect(order.status).to.eql('FILLED'));",
+                  "pm.test('order has an id and an ISO datetime', () => {",
+                  "  pm.expect(order.id).to.be.a('number');",
+                  "  pm.expect(new Date(order.datetime).toISOString()).to.eql(order.datetime);",
+                  "});",
+                  "pm.test('quantity is the maximum whole number of shares that fits the amount', () => {",
+                  "  const price = Number(order.price);",
+                  "  pm.expect(order.size * price).to.be.at.most(5000);",
+                  "  pm.expect((order.size + 1) * price).to.be.above(5000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "The amount is converted into the maximum whole number of shares.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"amount\": \"5000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "MARKET SELL of owned shares",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const order = pm.response.json();",
+                  "pm.test('order is stored as FILLED', () => pm.expect(order.status).to.eql('FILLED'));",
+                  "pm.test('order has an id and an ISO datetime', () => {",
+                  "  pm.expect(order.id).to.be.a('number');",
+                  "  pm.expect(new Date(order.datetime).toISOString()).to.eql(order.datetime);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "Succeeds because the user holds shares of the instrument (net of NEW LIMIT SELL commitments).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"SELL\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders - rejected (stored, HTTP 201)",
+      "description": "Business rejections are stored and returned with status REJECTED and a reason.",
+      "item": [
+        {
+          "name": "BUY without enough pesos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const order = pm.response.json();",
+                  "pm.test('order is stored as REJECTED', () => pm.expect(order.status).to.eql('REJECTED'));",
+                  "pm.test('order has an id and an ISO datetime', () => {",
+                  "  pm.expect(order.id).to.be.a('number');",
+                  "  pm.expect(new Date(order.datetime).toISOString()).to.eql(order.datetime);",
+                  "});",
+                  "pm.test('reason is insufficient funds', () => pm.expect(order.reason).to.eql('insufficient funds'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "A business rejection: the order is stored as REJECTED and answered with 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 100000000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "LIMIT BUY without enough pesos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const order = pm.response.json();",
+                  "pm.test('order is stored as REJECTED', () => pm.expect(order.status).to.eql('REJECTED'));",
+                  "pm.test('order has an id and an ISO datetime', () => {",
+                  "  pm.expect(order.id).to.be.a('number');",
+                  "  pm.expect(new Date(order.datetime).toISOString()).to.eql(order.datetime);",
+                  "});",
+                  "pm.test('reason is insufficient funds', () => pm.expect(order.reason).to.eql('insufficient funds'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "LIMIT orders are validated at creation too.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"quantity\": 100000000,\n  \"price\": \"1000.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "SELL without enough shares",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const order = pm.response.json();",
+                  "pm.test('order is stored as REJECTED', () => pm.expect(order.status).to.eql('REJECTED'));",
+                  "pm.test('order has an id and an ISO datetime', () => {",
+                  "  pm.expect(order.id).to.be.a('number');",
+                  "  pm.expect(new Date(order.datetime).toISOString()).to.eql(order.datetime);",
+                  "});",
+                  "pm.test('reason is insufficient holdings', () => pm.expect(order.reason).to.eql('insufficient holdings'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "Seed user 1 holds -10 of instrument 31, so any sale is rejected.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{negativePositionInstrumentId}},\n  \"side\": \"SELL\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders - invalid input (not stored, HTTP 4xx)",
+      "description": "Invalid requests are answered with a 4xx and nothing is stored.",
+      "item": [
+        {
+          "name": "BUY on ARS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is INSTRUMENT_NOT_TRADABLE', () => pm.expect(body.error).to.eql('INSTRUMENT_NOT_TRADABLE'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "ARS is the cash instrument and cannot be traded.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{cashInstrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Amount that does not cover one share",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is AMOUNT_BELOW_PRICE', () => pm.expect(body.error).to.eql('AMOUNT_BELOW_PRICE'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "The resulting quantity would be zero.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"amount\": \"1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Quantity and amount together",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is VALIDATION_ERROR', () => pm.expect(body.error).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "Send exactly one of quantity or amount.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1,\n  \"amount\": \"100\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "LIMIT without price",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is VALIDATION_ERROR', () => pm.expect(body.error).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "A LIMIT order requires a price.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "MARKET with price",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is VALIDATION_ERROR', () => pm.expect(body.error).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "A MARKET order executes at the market price and must not send one.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1,\n  \"price\": \"100.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Unknown instrument",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is INSTRUMENT_NOT_FOUND', () => pm.expect(body.error).to.eql('INSTRUMENT_NOT_FOUND'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "The instrument in the body does not exist.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": 999999,\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Unknown user",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is NOT_FOUND', () => pm.expect(body.error).to.eql('NOT_FOUND'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{unknownUserId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{unknownUserId}}", "orders"]
+            },
+            "description": "The user in the path does not exist.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

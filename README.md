@@ -42,6 +42,20 @@ curl localhost:3000/health    # {"status":"ok","db":"up"}
 The database init script runs only on the first start. To reset it: `docker compose down -v`.
 The database is published on host port 5433 to avoid clashing with a local Postgres on 5432. Change it with `DB_PORT` (and update `DATABASE_URL` to match).
 
+## Postman
+
+`docs/postman/` holds the collection (23 requests, one per case, with assertions) and a `local`
+environment (`baseUrl`, `userId`, ...). Import both into Postman, or run them from the terminal:
+
+```bash
+npx newman@6.2.1 run docs/postman/portfolio-orders-api.postman_collection.json \
+  -e docs/postman/local.postman_environment.json
+```
+
+The order requests **write** orders for user 1: use them only against an API connected to the local
+docker-compose Postgres (reset with `docker compose down -v`). The assertions are relative, so the
+collection can be run repeatedly.
+
 ## Database migrations
 
 SQL files in `db/migrations/`, applied in order by `npm run db:migrate` and tracked in the
