@@ -8,6 +8,7 @@ import type { Env } from './config/env.schema';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { InstrumentsModule } from './instruments/instruments.module';
+import { PortfolioModule } from './portfolio/portfolio.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { InstrumentsModule } from './instruments/instruments.module';
     DatabaseModule,
     HealthModule,
     InstrumentsModule,
+    PortfolioModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],
 })

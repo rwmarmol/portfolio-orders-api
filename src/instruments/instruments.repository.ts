@@ -46,4 +46,18 @@ export class InstrumentsRepository {
     );
     return rows[0];
   }
+
+  async findByIds(
+    ids: readonly number[],
+    db: Queryable = this.pool,
+  ): Promise<Map<number, Instrument>> {
+    const found = new Map<number, Instrument>();
+    if (ids.length === 0) return found;
+    const { rows } = await db.query<Instrument>(
+      'SELECT id, ticker, name, type FROM instruments WHERE id = ANY($1::int[])',
+      [ids],
+    );
+    for (const row of rows) found.set(row.id, row);
+    return found;
+  }
 }
