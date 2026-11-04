@@ -1,6 +1,7 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { PinoLogger } from 'nestjs-pino';
+import { InvalidOrderInputError } from '../../domain';
 import { AppError } from '../errors/app-error';
 
 export interface ErrorBody {
@@ -33,6 +34,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (exception instanceof AppError) {
       return {
         statusCode: exception.status,
+        error: exception.code,
+        message: exception.message,
+        requestId,
+      };
+    }
+    if (exception instanceof InvalidOrderInputError) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
         error: exception.code,
         message: exception.message,
         requestId,

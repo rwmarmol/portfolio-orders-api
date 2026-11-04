@@ -1,5 +1,6 @@
 import { ArgumentsHost, BadRequestException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
+import { InvalidOrderInputError } from '../../domain';
 import { NotFoundError } from '../errors/app-error';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 
@@ -24,6 +25,18 @@ describe('AllExceptionsFilter', () => {
       message: 'nope',
       requestId: 'req-1',
     });
+  });
+
+  it('maps domain input errors to 400 with their code', () => {
+    const { filter, host, status, json } = setup();
+    filter.catch(
+      new InvalidOrderInputError('AMOUNT_BELOW_PRICE', 'Amount does not cover one share'),
+      host,
+    );
+    expect(status).toHaveBeenCalledWith(400);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'AMOUNT_BELOW_PRICE', statusCode: 400 }),
+    );
   });
 
   it('maps HttpException keeping its status', () => {
