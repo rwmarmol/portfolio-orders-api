@@ -23,7 +23,8 @@ correctness, security, maintainability and operability matter from day one.
 | `npm run db:migrate` | Apply pending migrations from `db/migrations/` (runner refuses non-local hosts) |
 | `npm run start:dev` | Run the API in watch mode |
 | `npm run build` | Compile to `dist/` |
-| `npm test` | Run unit and e2e tests (Jest) |
+| `npm test` | Run unit and e2e tests (Jest, no database needed) |
+| `npm run test:db` | Functional tests through the real app against `portfolio_test`, created inside the local compose Postgres (refuses non-local hosts) |
 | `npm run lint` | ESLint |
 | `npm run format` | Prettier |
 
@@ -38,18 +39,19 @@ src/
   main.ts          bootstrap (env validated first, then Nest)
   app.module.ts
   config/          zod env schema + APP_CONFIG provider
-  common/          errors/ (AppError hierarchy), http/ (global exception filter)
-  database/        pg Pool provider (PG_POOL)
+  common/          errors/ (AppError hierarchy), http/ (exception filter, zod pipe), presentation/ (number formatting)
+  database/        pg Pool provider (PG_POOL token in tokens.ts), TransactionRunner, pg type parsers
+  users/ instruments/ market-data/ orders/ portfolio/   feature modules: controller -> service -> repository
   health/          GET /health
   domain/          pure functions only (no I/O, no Nest, no pg)
-test/              e2e tests
+test/              e2e tests (*.e2e-spec.ts, no DB) and database-backed tests (*.db-spec.ts)
 db/init/           baseline schema and seed, loaded by docker compose on first start
 db/migrations/     versioned SQL migrations (+ read-only prechecks); scripts/migrate.mjs applies them
 scripts/           operational scripts (migration runner)
 docs/              spec and decisions
 ```
 
-Feature modules (added later) follow `src/<feature>/` with three layers; dependencies only point down:
+Feature modules follow `src/<feature>/` with three layers; dependencies only point down:
 
 1. **http** (controllers, DTO validation) -> calls services only.
 2. **services / use cases** (orchestration, transactions) -> call repositories and domain functions.

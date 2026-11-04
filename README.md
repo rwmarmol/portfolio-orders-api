@@ -3,7 +3,25 @@
 REST service for an investment platform: portfolio, instrument search and order submission.
 See `docs/spec.md` for the scope and roadmap, and `docs/decisions.md` for design decisions.
 
-Current state: project skeleton (Phase 0) with `GET /health`. Business endpoints are not implemented yet.
+## API
+
+| Endpoint | Description |
+| --- | --- |
+| `GET /health` | Liveness and database check |
+| `GET /users/:userId/portfolio` | Available and committed pesos, total value (`totalIsPartial` when a position has no price) and positions with returns |
+| `GET /instruments?q=&limit=` | Search by ticker or name (partial, case-insensitive; default 20, max 50) |
+| `POST /users/:userId/orders` | Submit a BUY or SELL, MARKET or LIMIT, by `quantity` or `amount` |
+
+```bash
+curl localhost:3000/users/1/portfolio
+curl 'localhost:3000/instruments?q=pa'
+curl -X POST localhost:3000/users/1/orders -H 'content-type: application/json' \
+  -d '{"instrumentId":47,"side":"BUY","type":"MARKET","quantity":10}'
+```
+
+Rejected orders (insufficient funds or holdings, no market price) are stored and answered with 201,
+`status: "REJECTED"` and a `reason`; invalid input is a 400 and is not stored. The API contract is in
+`docs/decisions.md` (D11). Do not run the write examples against a shared database.
 
 ## Requirements
 
@@ -62,7 +80,8 @@ docker run -p 3000:3000 -e DATABASE_URL='postgresql://<user>:<password>@<host>:5
 | --- | --- |
 | `npm run start:dev` | API in watch mode |
 | `npm run build` | Compile to `dist/` |
-| `npm test` | Unit and e2e tests |
+| `npm test` | Unit and e2e tests (no database needed) |
+| `npm run test:db` | Functional tests against a throwaway database in the local compose Postgres |
 | `npm run db:migrate` | Apply pending SQL migrations (local database only) |
 | `npm run lint` | ESLint |
 | `npm run format` | Prettier |

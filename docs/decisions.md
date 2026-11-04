@@ -73,7 +73,19 @@
 
 - **Decision:** a MARKET order (BUY or SELL) on an instrument with no market data is stored as `REJECTED` with the reason "no market price available" (code `NO_MARKET_PRICE`). The check runs before the funds and holdings validation.
 - **Why:** a MARKET order executes at the latest `close`; without one there is no price to execute at, and per Q4 a business rejection is stored and returned as 201 with `status: REJECTED` and the reason.
-- **Pending details (not decided):** (1) by amount, the quantity cannot be derived without a price, so the order has no valid `size` to store (`size > 0` is enforced since D8) — should it be a 400 instead? (2) What `price` is stored on that rejected order — `NULL`? (3) The wording of the other reasons ("insufficient funds", "insufficient holdings") is my proposal.
+- **Confirmed details:** a MARKET order by amount on an instrument without a price is a 400 (`NO_MARKET_PRICE`) and is not stored, because the quantity cannot be derived and `size > 0` is enforced since D8. By exact quantity the order is stored as `REJECTED` with a `NULL` price.
+- **My wording, not confirmed:** the texts of the other rejection reasons, "insufficient funds" and "insufficient holdings".
+
+### D11 — API contract and order flow (Phase 3)
+
+- **Endpoints:** `GET /users/:userId/portfolio`, `GET /instruments?q=&limit=`, `POST /users/:userId/orders` (Q7, Q12, Q4). Money and percentages are 2-decimal strings (half-up, never `-0.00`), rounded once in the HTTP layer; `null` where the domain returns null. JSON numbers are accepted for `amount`/`price` but normalized to decimal strings (at most 2 decimals, no exponent), never used as floats. Request bodies reject unknown fields.
+- **Order flow:** one `READ COMMITTED` transaction: lock the user row with `SELECT ... FOR NO KEY UPDATE` (serializes order transactions per user, does not block foreign-key checks from other tables; also yields the 404), load the instrument, resolve the price (MARKET: latest `close`, stored as `price` per Q9; LIMIT: the user's price), resolve the quantity, load the user's `FILLED` and `NEW` orders, evaluate with the domain (Q3, D10) and insert. A rejection is stored and answered with 201, `status: REJECTED` and `reason`. Balances are computed by the domain over the user's active orders (single source of truth for the rules) instead of re-implemented as SQL aggregations; revisit with SQL aggregates if per-user order volume grows.
+- **Portfolio:** read in one `REPEATABLE READ READ ONLY` transaction so orders and prices are consistent; a position without market data is returned with null values and flagged through `totalIsPartial`, with a `logger.warn` carrying `userId` and `instrumentId` (D9).
+- **Errors:** invalid input is 400 and nothing is stored (`VALIDATION_ERROR`, `AMOUNT_BELOW_PRICE`, `INSTRUMENT_NOT_TRADABLE`, `INSTRUMENT_NOT_FOUND`, `NO_MARKET_PRICE`, ...); an unknown user in the path is 404. An unknown instrument in the body is 400 (it is a body reference, not a path resource). Out-of-range `limit` is a 400, not clamped; a MARKET order that sends `price` is a 400.
+- **Search:** order is exact ticker, ticker prefix, name contains, then ticker contains; alphabetical by ticker within each group; ARS excluded; `%`, `_` and `\` are matched literally.
+- **Latest price:** the most recent `marketdata` row per instrument; if its `close` is null the instrument has no price (an older close is never used as a stand-in).
+- **Timestamps:** `orders.datetime` is written as UTC and read as UTC regardless of the process time zone, because the average cost walks orders chronologically.
+- **Tests:** `npm run test:db` runs functional tests through the real application against a throwaway `portfolio_test` database created inside the local compose Postgres; the setup refuses non-local hosts. They include a concurrency test: with the per-user lock exactly the affordable orders are filled; removing the lock makes it fail (verified).
 
 ## Open questions
 
