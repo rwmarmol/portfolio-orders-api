@@ -29,8 +29,8 @@ describe('AppModule wiring', () => {
   });
 
   it('rejects an invalid search query with the uniform error body', async () => {
-    const res = await request(app.getHttpServer()).get('/instruments').expect(400);
+    const res = await request(app.getHttpServer()).get('/instruments?limit=0').expect(400);
     expect(res.body).toMatchObject({ statusCode: 400, error: 'VALIDATION_ERROR' });
-    expect(res.body.message).toMatch(/q/);
+    expect(res.body.message).toMatch(/limit/);
   });
 });
