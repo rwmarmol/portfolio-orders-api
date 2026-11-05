@@ -44,12 +44,15 @@
                 "exec": [
                   "pm.test('status is 200', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
-                  "pm.test('money fields are 2-decimal strings', () => ['availablePesos', 'committedPesos', 'totalValue'].forEach((k) => pm.expect(body[k]).to.match(/^-?\\d+\\.\\d{2}$/)));",
+                  "pm.test('money fields are 2-decimal strings', () => ['availableAmount', 'committedAmount', 'buyableAmount', 'totalValue'].forEach((k) => pm.expect(body[k]).to.match(/^-?\\d+\\.\\d{2}$/)));",
                   "pm.test('total value is cash plus the priced positions', () => {",
-                  "  const sum = body.positions.reduce((acc, p) => acc + (p.marketValue === null ? 0 : Number(p.marketValue)), Number(body.availablePesos));",
+                  "  const sum = body.positions.reduce((acc, p) => acc + (p.marketValue === null ? 0 : Number(p.marketValue)), Number(body.availableAmount));",
                   "  pm.expect(Math.abs(sum - Number(body.totalValue))).to.be.below(0.01 * (body.positions.length + 1));",
                   "});",
                   "pm.test('totalIsPartial is a boolean', () => pm.expect(body.totalIsPartial).to.be.a('boolean'));",
+                  "pm.test('amounts are in pesos', () => pm.expect(body.currency).to.eql('ARS'));",
+                  "pm.test('buyable amount is available minus committed', () =>",
+                  "  pm.expect(Math.abs(Number(body.availableAmount) - Number(body.committedAmount) - Number(body.buyableAmount))).to.be.below(0.011));",
                   "pm.test('seed position of instrument 31 stays negative and has no total return', () => {",
                   "  const p = body.positions.find((x) => x.instrumentId === 31);",
                   "  pm.expect(p.quantity).to.eql(-10);",
@@ -68,7 +71,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["users", "{{userId}}", "portfolio"]
             },
-            "description": "Available pesos, pesos committed by NEW LIMIT BUY orders, total value and positions with returns. Assertions are relative so the request passes after other requests have created orders. Exact seed values (753000.00 / 125500.00 / 40 / -10 / 500) hold on a freshly seeded database only."
+            "description": "Available amount (executed cash), amount committed by NEW LIMIT BUY orders, buyable amount (what a new order can use), total value and positions with returns. All amounts are in `currency` (ARS). Assertions are relative so the request passes after other requests have created orders. Exact seed values (753000.00 / 125500.00 / 627500.00 / 40 / -10 / 500) hold on a freshly seeded database only."
           }
         },
         {
@@ -389,7 +392,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["users", "{{userId}}", "orders"]
             },
-            "description": "Stored as NEW with the user's price. Nothing executes it (no market simulation); its pesos count as committed.",
+            "description": "Stored as NEW with the user's price. Nothing executes it (no market simulation); its funds count as committed.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"quantity\": 1,\n  \"price\": \"100.00\"\n}",
@@ -442,6 +445,51 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"amount\": \"5000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "MARKET BUY ignoring a price",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const order = pm.response.json();",
+                  "pm.test('order is stored as FILLED', () => pm.expect(order.status).to.eql('FILLED'));",
+                  "pm.test('order has an id and an ISO datetime', () => {",
+                  "  pm.expect(order.id).to.be.a('number');",
+                  "  pm.expect(new Date(order.datetime).toISOString()).to.eql(order.datetime);",
+                  "});",
+                  "pm.test('the price sent is ignored: it executes at the market price', () => pm.expect(order.price).to.not.eql('1.00'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "A MARKET order executes at the market price; a price sent with it is ignored instead of failing.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1,\n  \"price\": \"1.00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -524,7 +572,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["users", "{{userId}}", "orders", "{{limitOrderId}}", "cancel"]
             },
-            "description": "Only NEW orders can be cancelled. The pesos it committed are released automatically. Depends on `LIMIT BUY by quantity`, which stores the order id in `limitOrderId`."
+            "description": "Only NEW orders can be cancelled. The funds it committed are released automatically. Depends on `LIMIT BUY by quantity`, which stores the order id in `limitOrderId`."
           }
         },
         {
@@ -645,7 +693,7 @@
       "description": "Business rejections are stored and returned with status REJECTED and a reason.",
       "item": [
         {
-          "name": "BUY without enough pesos",
+          "name": "BUY without enough funds",
           "event": [
             {
               "listen": "test",
@@ -690,7 +738,7 @@
           }
         },
         {
-          "name": "LIMIT BUY without enough pesos",
+          "name": "LIMIT BUY without enough funds",
           "event": [
             {
               "listen": "test",
@@ -945,48 +993,6 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"quantity\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "MARKET with price",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
-                  "const body = pm.response.json();",
-                  "pm.test('error code is VALIDATION_ERROR', () => pm.expect(body.error).to.eql('VALIDATION_ERROR'));",
-                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
-                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/users/{{userId}}/orders",
-              "host": ["{{baseUrl}}"],
-              "path": ["users", "{{userId}}", "orders"]
-            },
-            "description": "A MARKET order executes at the market price and must not send one.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1,\n  \"price\": \"100.00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
