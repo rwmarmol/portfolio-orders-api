@@ -22,6 +22,7 @@ describe('buildPortfolio', () => {
 
     expect(portfolio.availableAmount.toFixed(2)).toBe('753000.00');
     expect(portfolio.committedAmount.toFixed(2)).toBe('125500.00');
+    expect(portfolio.buyableAmount.toFixed(2)).toBe('627500.00');
     // 753,000 + (-10 * 1500) + (40 * 1000) + (500 * 260)
     expect(portfolio.totalValue.toFixed(2)).toBe('908000.00');
 

@@ -32,6 +32,8 @@ describe('GET /users/:userId/portfolio (database)', () => {
 
     expect(body.availableAmount).toBe('753000.00');
     expect(body.committedAmount).toBe('125500.00');
+    expect(body.buyableAmount).toBe('627500.00'); // 753,000 - 125,500
+    expect(body.currency).toBe('ARS');
     expect(body.totalIsPartial).toBe(false);
 
     const quantities = Object.fromEntries(
@@ -58,6 +60,7 @@ describe('GET /users/:userId/portfolio (database)', () => {
     expect(body).toMatchObject({
       availableAmount: '0.00',
       committedAmount: '0.00',
+      buyableAmount: '0.00',
       totalValue: '0.00',
       totalIsPartial: false,
       positions: [],

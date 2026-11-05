@@ -77,6 +77,7 @@ describe('POST /users/:userId/orders (database)', () => {
     const body = await portfolio(userId);
     expect(body.availableAmount).toBe('100000.00');
     expect(body.committedAmount).toBe('4500.00');
+    expect(body.buyableAmount).toBe('95500.00');
     expect(body.positions).toEqual([]);
   });
 

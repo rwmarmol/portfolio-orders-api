@@ -62,7 +62,10 @@ describe('PortfolioService', () => {
     const { service, warn } = setup(true, quotes);
     const result = await service.get(1);
     expect(result).toMatchObject({
+      currency: 'ARS',
       availableAmount: '-2500.00',
+      committedAmount: '0.00',
+      buyableAmount: '-2500.00',
       totalValue: '100.00',
       totalIsPartial: false,
     });

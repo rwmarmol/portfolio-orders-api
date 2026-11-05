@@ -51,7 +51,9 @@ describe('POST /users/:userId/orders/:orderId/cancel (database)', () => {
     const userId = await createUser(pool);
     await fund(pool, userId, 10_000);
     const limit = await submit(userId, limitOrder('BUY', 5, '1000')); // 5,000 committed
-    expect((await portfolio(userId)).committedAmount).toBe('5000.00');
+    const committed = await portfolio(userId);
+    expect(committed.committedAmount).toBe('5000.00');
+    expect(committed.buyableAmount).toBe('5000.00');
 
     // Six shares at the latest close do not fit in the 5,000 still buyable.
     expect((await submit(userId, marketOrder('BUY', 6))).status).toBe('REJECTED');
@@ -61,6 +63,7 @@ describe('POST /users/:userId/orders/:orderId/cancel (database)', () => {
 
     const after = await portfolio(userId);
     expect(after.committedAmount).toBe('0.00');
+    expect(after.buyableAmount).toBe('10000.00'); // the commitment is released
     expect(after.availableAmount).toBe('10000.00'); // a cancelled order never moved cash
     expect((await submit(userId, marketOrder('BUY', 6))).status).toBe('FILLED');
   });

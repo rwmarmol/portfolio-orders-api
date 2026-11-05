@@ -1,6 +1,6 @@
 import { costBasis } from './average-cost';
 import { D, Dec } from './decimal';
-import { committedAmount, filledCash, openPositions } from './ledger';
+import { buyableAmount, committedAmount, filledCash, openPositions } from './ledger';
 import { dailyReturnPct, totalReturnPct } from './returns';
 import type { MarketQuote, OrderRecord } from './types';
 
@@ -21,6 +21,8 @@ export interface Portfolio {
   availableAmount: Dec;
   /** Funds committed by NEW LIMIT BUY orders. */
   committedAmount: Dec;
+  /** availableAmount minus committedAmount: what a new order can use. */
+  buyableAmount: Dec;
   /** availableAmount plus the market value of the positions that have a price. */
   totalValue: Dec;
   /** True when at least one position has no market data and is left out of `totalValue`. */
@@ -81,6 +83,7 @@ export function buildPortfolio(
   return {
     availableAmount,
     committedAmount: committedAmount(orders),
+    buyableAmount: buyableAmount(orders),
     totalValue,
     totalIsPartial,
     positions,
