@@ -6,7 +6,7 @@ import {
   assertTradable,
   buyablePesos,
   evaluateOrder,
-  isCancellable,
+  evaluateCancellation,
   resolveQuantity,
   sellableShares,
 } from '../domain';
@@ -116,15 +116,18 @@ export class OrdersService {
    * Cancels a NEW order (Q1, D12). Runs under the same per-user lock as order submission, so a
    * cancellation cannot interleave with a new order of that user. The pesos or shares the order
    * committed are released implicitly: commitments are computed from NEW orders (Q3).
+   * Idempotent: cancelling an already CANCELLED order succeeds and changes nothing.
    */
   async cancel(userId: number, orderId: number): Promise<OrderResponse> {
-    const cancelled = await this.transactions.run(async (db) => {
+    const { order: result, repeated } = await this.transactions.run(async (db) => {
       if (!(await this.users.lockForUpdate(userId, db))) {
         throw new NotFoundError(`User ${userId} not found`);
       }
       const order = await this.orders.findByIdForUser(orderId, userId, db);
       if (order === undefined) throw new NotFoundError(`Order ${orderId} not found`);
-      if (!isCancellable(order.status)) {
+      const outcome = evaluateCancellation(order.status);
+      if (outcome === 'ALREADY_CANCELLED') return { order, repeated: true };
+      if (outcome === 'NOT_CANCELLABLE') {
         throw new ConflictError(
           `Only NEW orders can be cancelled (order ${orderId} is ${order.status})`,
           'ORDER_NOT_CANCELLABLE',
@@ -137,13 +140,13 @@ export class OrdersService {
           'ORDER_NOT_CANCELLABLE',
         );
       }
-      return updated;
+      return { order: updated, repeated: false };
     });
 
     this.logger.log(
-      { orderId, userId, instrumentId: cancelled.instrumentId, status: cancelled.status },
-      'order.cancelled',
+      { orderId, userId, instrumentId: result.instrumentId, status: result.status },
+      repeated ? 'order.cancel.repeated' : 'order.cancelled',
     );
-    return presentOrder(cancelled);
+    return presentOrder(result);
   }
 }

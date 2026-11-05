@@ -1,10 +1,15 @@
-import { isCancellable } from './cancellation';
+import { evaluateCancellation } from './cancellation';
 
-describe('isCancellable', () => {
-  it('allows only NEW orders', () => {
-    expect(isCancellable('NEW')).toBe(true);
-    expect(isCancellable('FILLED')).toBe(false);
-    expect(isCancellable('REJECTED')).toBe(false);
-    expect(isCancellable('CANCELLED')).toBe(false);
+describe('evaluateCancellation', () => {
+  it('cancels a NEW order', () => {
+    expect(evaluateCancellation('NEW')).toBe('CANCEL');
+  });
+
+  it('treats a repeated cancellation as already done', () => {
+    expect(evaluateCancellation('CANCELLED')).toBe('ALREADY_CANCELLED');
+  });
+
+  it.each(['FILLED', 'REJECTED'] as const)('does not allow cancelling a %s order', (status) => {
+    expect(evaluateCancellation(status)).toBe('NOT_CANCELLABLE');
   });
 });

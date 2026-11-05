@@ -101,24 +101,27 @@ describe('POST /users/:userId/orders/:orderId/cancel (database)', () => {
       },
     );
 
-    it('answers 409 when the order was already cancelled', async () => {
+    it('is idempotent: cancelling an already cancelled order succeeds and changes nothing', async () => {
       const userId = await createUser(pool);
       await fund(pool, userId, 10_000);
       const limit = await submit(userId, limitOrder('BUY', 1, '100'));
-      await cancel(userId, limit.id).expect(200);
+      const first = await cancel(userId, limit.id).expect(200);
 
       const again = await cancel(userId, limit.id);
-      expect(again.status).toBe(409);
-      expect(again.body.error).toBe('ORDER_NOT_CANCELLABLE');
+      expect(again.status).toBe(200);
+      expect(again.body).toEqual(first.body);
+      expect(await statusOf(limit.id)).toBe('CANCELLED');
+      expect((await portfolio(userId)).committedPesos).toBe('0.00');
     });
 
-    it('lets exactly one of two simultaneous cancellations win', async () => {
+    it('answers 200 to both of two simultaneous cancellations of the same order', async () => {
       const userId = await createUser(pool);
       await fund(pool, userId, 10_000);
       const limit = await submit(userId, limitOrder('BUY', 1, '100'));
 
       const responses = await Promise.all([cancel(userId, limit.id), cancel(userId, limit.id)]);
-      expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
+      expect(responses.map((r) => r.status)).toEqual([200, 200]);
+      expect(responses.every((r) => r.body.status === 'CANCELLED')).toBe(true);
       expect(await statusOf(limit.id)).toBe('CANCELLED');
     });
   });
