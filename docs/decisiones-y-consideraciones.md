@@ -192,18 +192,17 @@ Verificamos todo contra la base local; **en ningún momento se tocó una base re
 
 ## 2.8 Cómo se probó
 
-- **Pruebas unitarias del cerebro** y del resto del código (107 pruebas, sin base de datos).
+- **Pruebas unitarias del cerebro** y del resto del código (107 pruebas, sin base de datos). Incluyen una prueba que arranca la aplicación completa (sin base de datos), para detectar errores de cableado entre módulos.
 - **Pruebas funcionales con base de datos** (38): usan la aplicación real contra una base temporal local. Cubren cada caso de la especificación: ejecución MARKET, orden LIMIT, compra por monto, rechazo por fondos, rechazo por tenencia, compromisos de LIMIT, instrumento sin precio, el portfolio de referencia del usuario 1 y la búsqueda; más la prueba de concurrencia de 2.4 y los casos de cancelación (liberar compromisos, órdenes que no se pueden cancelar, cancelación repetida, órdenes de otro usuario y dos cancelaciones simultáneas).
 - **Colección de Postman** (`docs/postman/`): 28 pedidos, uno por caso, con 107 verificaciones. Se ejecutó repetidas veces con Newman contra una base descartable. Ojo: los pedidos de órdenes **escriben** datos, por eso solo deben apuntar a una API conectada a la base local.
 
-## 2.9 Problemas que encontramos en el camino
+## 2.9 Limitaciones y convenciones técnicas vigentes
 
-Los dejamos documentados porque son el tipo de cosa que le puede pasar a quien continúe el proyecto:
+Cosas que conviene saber para continuar el proyecto:
 
-1. **NestJS 12 solo publica código en el formato moderno de módulos (ESM)**, mientras el proyecto compila al formato clásico. Funciona porque Node 24 puede cargar ambos, pero obliga a ejecutar las pruebas con una opción experimental de Node. Si molestara, se puede pasar todo el proyecto a ESM.
-2. **El archivo `.env` no se cargaba**: el README decía "copiá `.env.example` a `.env`", pero la aplicación nunca lo leía. Lo detectamos al preparar la migración y lo corregimos (fuera de producción, la aplicación lee `.env` si existe).
-3. **Una dependencia circular entre módulos** impedía que la aplicación arrancara, aunque las pruebas unitarias pasaban. Lo corregimos y agregamos una prueba que arranca la aplicación completa, para que no vuelva a pasar sin que se note.
-4. **El orden cronológico de las órdenes** depende de una fecha guardada sin zona horaria; si se interpretara en la zona horaria del servidor, el costo promedio podría salir distinto según dónde corra. Se fuerza a leerla siempre como UTC.
+1. **NestJS 12 solo publica código en el formato moderno de módulos (ESM)**, mientras el proyecto compila al formato clásico. Funciona porque Node 24 puede cargar ambos, pero obliga a ejecutar las pruebas con una opción experimental de Node y a usar Node 24. Si molestara, se puede pasar todo el proyecto a ESM.
+2. **Las fechas de las órdenes se leen siempre como UTC.** El orden cronológico de las órdenes depende de una fecha guardada sin zona horaria; si se interpretara en la zona horaria del servidor, el costo promedio podría salir distinto según dónde corra.
+3. **La configuración sale de variables de entorno.** Fuera de producción, la aplicación también lee un archivo `.env` si existe; en producción solo cuentan las variables de entorno.
 
 ## 2.10 Lo que consideramos y no implementamos (técnico)
 
