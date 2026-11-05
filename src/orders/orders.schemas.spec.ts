@@ -1,4 +1,4 @@
-import { createOrderSchema } from './orders.schemas';
+import { createOrderSchema, orderParamSchema } from './orders.schemas';
 
 const base = { instrumentId: 47, side: 'BUY', type: 'MARKET', quantity: 10 };
 
@@ -37,5 +37,23 @@ describe('createOrderSchema', () => {
     ['non-numeric amount', { instrumentId: 47, side: 'BUY', type: 'MARKET', amount: 'abc' }],
   ])('rejects %s', (_label, input) => {
     expect(createOrderSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe('orderParamSchema', () => {
+  it('parses both ids from the path', () => {
+    expect(orderParamSchema.parse({ userId: '1', orderId: '12' })).toEqual({
+      userId: 1,
+      orderId: 12,
+    });
+  });
+
+  it.each([
+    ['non-numeric order id', { userId: '1', orderId: 'abc' }],
+    ['zero order id', { userId: '1', orderId: '0' }],
+    ['order id above INT range', { userId: '1', orderId: '2147483648' }],
+    ['missing user id', { orderId: '1' }],
+  ])('rejects %s', (_label, input) => {
+    expect(orderParamSchema.safeParse(input).success).toBe(false);
   });
 });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { userParamSchema } from '../portfolio/portfolio.schemas';
 
 const INT4_MAX = 2_147_483_647;
 
@@ -46,3 +47,10 @@ export const createOrderSchema = z
   });
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
+
+/** Path parameters of `/users/:userId/orders/:orderId/...`. */
+export const orderParamSchema = userParamSchema.extend({
+  orderId: z.coerce.number().int().min(1).max(INT4_MAX),
+});
+
+export type OrderParam = z.infer<typeof orderParamSchema>;

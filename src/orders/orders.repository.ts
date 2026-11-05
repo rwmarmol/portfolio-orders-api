@@ -31,6 +31,14 @@ interface OrderRow extends Omit<OrderRecord, 'price'> {
   price: string | null;
 }
 
+/** Columns of a stored order, aliased to the camelCase names of StoredOrder. */
+const STORED_ORDER_COLUMNS = `id,
+                 userid AS "userId",
+                 instrumentid AS "instrumentId",
+                 side, type, status, size,
+                 price::text AS price,
+                 datetime`;
+
 @Injectable()
 export class OrdersRepository {
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
@@ -63,12 +71,7 @@ export class OrdersRepository {
     const { rows } = await db.query<StoredOrder>(
       `INSERT INTO orders (instrumentid, userid, size, price, type, side, status, datetime)
        VALUES ($1, $2, $3, $4::numeric, $5, $6, $7, now() AT TIME ZONE 'UTC')
-       RETURNING id,
-                 userid AS "userId",
-                 instrumentid AS "instrumentId",
-                 side, type, status, size,
-                 price::text AS price,
-                 datetime`,
+       RETURNING ${STORED_ORDER_COLUMNS}`,
       [
         order.instrumentId,
         order.userId,
@@ -82,5 +85,32 @@ export class OrdersRepository {
     const stored = rows[0];
     if (stored === undefined) throw new Error('Order insert returned no row');
     return stored;
+  }
+
+  /** An order of a given user; an order that belongs to someone else is treated as not found. */
+  async findByIdForUser(
+    orderId: number,
+    userId: number,
+    db: Queryable,
+  ): Promise<StoredOrder | undefined> {
+    const { rows } = await db.query<StoredOrder>(
+      `SELECT ${STORED_ORDER_COLUMNS} FROM orders WHERE id = $1 AND userid = $2`,
+      [orderId, userId],
+    );
+    return rows[0];
+  }
+
+  /**
+   * Moves a NEW order to CANCELLED. The status guard in the WHERE clause makes the transition
+   * safe on its own; returns undefined when the order was not NEW any more.
+   */
+  async cancel(orderId: number, db: Queryable): Promise<StoredOrder | undefined> {
+    const { rows } = await db.query<StoredOrder>(
+      `UPDATE orders SET status = 'CANCELLED'
+        WHERE id = $1 AND status = 'NEW'
+        RETURNING ${STORED_ORDER_COLUMNS}`,
+      [orderId],
+    );
+    return rows[0];
   }
 }

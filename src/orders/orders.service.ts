@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { Logger } from 'nestjs-pino';
-import { BadRequestError, NotFoundError } from '../common/errors/app-error';
+import { BadRequestError, ConflictError, NotFoundError } from '../common/errors/app-error';
 import { TransactionRunner } from '../database/transaction-runner';
 import {
   assertTradable,
   buyablePesos,
   evaluateOrder,
+  isCancellable,
   resolveQuantity,
   sellableShares,
 } from '../domain';
@@ -109,5 +110,40 @@ export class OrdersService {
       'order.created',
     );
     return presentOrder(stored, reason);
+  }
+
+  /**
+   * Cancels a NEW order (Q1, D12). Runs under the same per-user lock as order submission, so a
+   * cancellation cannot interleave with a new order of that user. The pesos or shares the order
+   * committed are released implicitly: commitments are computed from NEW orders (Q3).
+   */
+  async cancel(userId: number, orderId: number): Promise<OrderResponse> {
+    const cancelled = await this.transactions.run(async (db) => {
+      if (!(await this.users.lockForUpdate(userId, db))) {
+        throw new NotFoundError(`User ${userId} not found`);
+      }
+      const order = await this.orders.findByIdForUser(orderId, userId, db);
+      if (order === undefined) throw new NotFoundError(`Order ${orderId} not found`);
+      if (!isCancellable(order.status)) {
+        throw new ConflictError(
+          `Only NEW orders can be cancelled (order ${orderId} is ${order.status})`,
+          'ORDER_NOT_CANCELLABLE',
+        );
+      }
+      const updated = await this.orders.cancel(orderId, db);
+      if (updated === undefined) {
+        throw new ConflictError(
+          `Order ${orderId} is no longer NEW and cannot be cancelled`,
+          'ORDER_NOT_CANCELLABLE',
+        );
+      }
+      return updated;
+    });
+
+    this.logger.log(
+      { orderId, userId, instrumentId: cancelled.instrumentId, status: cancelled.status },
+      'order.cancelled',
+    );
+    return presentOrder(cancelled);
   }
 }
