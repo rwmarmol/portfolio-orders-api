@@ -150,7 +150,13 @@
                   "pm.test('every item matches the query in ticker or name (case-insensitive)', () =>",
                   "  items.forEach((i) => pm.expect((i.ticker + ' ' + i.name).toLowerCase()).to.include('pa')));",
                   "pm.test('ticker prefix matches come first', () => pm.expect(items[0].ticker.toLowerCase().startsWith('pa')).to.eql(true));",
-                  "pm.test('the cash instrument is never returned', () => items.forEach((i) => pm.expect(i.type).to.not.eql('MONEDA')));"
+                  "pm.test('the cash instrument is never returned', () => items.forEach((i) => pm.expect(i.type).to.not.eql('MONEDA')));",
+                  "pm.test('reports the total of matches and the paging used', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.total).to.be.at.least(items.length);",
+                  "  pm.expect(body.limit).to.eql(20);",
+                  "  pm.expect(body.offset).to.eql(0);",
+                  "});"
                 ]
               }
             }
@@ -239,7 +245,80 @@
           }
         },
         {
-          "name": "Search without q",
+          "name": "List the first page of instruments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('uses the default page of 20 and reports the paging metadata', () => {",
+                  "  pm.expect(body.items).to.have.lengthOf(20);",
+                  "  pm.expect(body.limit).to.eql(20);",
+                  "  pm.expect(body.offset).to.eql(0);",
+                  "  pm.expect(body.total).to.be.at.least(20);",
+                  "});",
+                  "pm.test('the cash instrument is never listed', () => body.items.forEach((i) => pm.expect(i.type).to.not.eql('MONEDA')));",
+                  "pm.test('instruments are alphabetical by ticker', () => {",
+                  "  const tickers = body.items.map((i) => i.ticker);",
+                  "  pm.expect(tickers).to.eql([...tickers].sort());",
+                  "});",
+                  "pm.collectionVariables.set('firstPageTickers', JSON.stringify(body.items.map((i) => i.ticker)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/instruments",
+              "host": ["{{baseUrl}}"],
+              "path": ["instruments"]
+            },
+            "description": "Without `q` the endpoint lists every tradable instrument (all but ARS; all prices are assumed to be in pesos), alphabetical by ticker, 20 per page by default (maximum 50). `total` is the size of the whole catalog."
+          }
+        },
+        {
+          "name": "List the second page of instruments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('reports the offset of the page', () => pm.expect(body.offset).to.eql(20));",
+                  "pm.test('does not repeat instruments of the first page', () => {",
+                  "  const first = JSON.parse(pm.collectionVariables.get('firstPageTickers'));",
+                  "  body.items.forEach((i) => pm.expect(first).to.not.include(i.ticker));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/instruments?offset=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["instruments"],
+              "query": [
+                {
+                  "key": "offset",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Offset pagination: the next page continues after the first one. Depends on `List the first page of instruments`."
+          }
+        },
+        {
+          "name": "Search with a blank q",
           "event": [
             {
               "listen": "test",
@@ -259,11 +338,51 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/instruments",
+              "raw": "{{baseUrl}}/instruments?q=%20",
               "host": ["{{baseUrl}}"],
-              "path": ["instruments"]
+              "path": ["instruments"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "%20"
+                }
+              ]
             },
-            "description": "`q` is required."
+            "description": "When `q` is sent it must not be blank (omit it to list instead)."
+          }
+        },
+        {
+          "name": "List with a negative offset",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is VALIDATION_ERROR', () => pm.expect(body.error).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/instruments?offset=-1",
+              "host": ["{{baseUrl}}"],
+              "path": ["instruments"],
+              "query": [
+                {
+                  "key": "offset",
+                  "value": "-1"
+                }
+              ]
+            },
+            "description": "The offset must be a non-negative integer."
           }
         },
         {
@@ -1095,6 +1214,10 @@
     },
     {
       "key": "filledOrderId",
+      "value": ""
+    },
+    {
+      "key": "firstPageTickers",
       "value": ""
     }
   ]
