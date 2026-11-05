@@ -58,12 +58,13 @@ La especificación tenía doce puntos sin definir. Nosotros no los decidimos: pr
 9. **¿Qué precio se guarda en una orden MARKET?** El precio de cierre usado al ejecutar, porque las cuentas de saldo necesitan cantidad por precio.
 10. **¿Qué hacemos con la posición de -10?** Se muestra tal cual, se documenta como una anomalía de los datos de ejemplo y las ventas nuevas la impiden.
 11. **¿Qué pasa con ARS (el dinero)?** Aparece solo como monto disponible, nunca como una posición. Intentar comprar o vender ARS da error 400. Tampoco aparece en las búsquedas.
-12. **¿Cómo funciona la búsqueda?** Coincidencia parcial, sin distinguir mayúsculas, por ticker o por nombre. El orden es: ticker exacto, ticker que empieza con lo buscado, nombre que lo contiene, ticker que lo contiene, y alfabético dentro de cada grupo. Devuelve 20 resultados por defecto y 50 como máximo.
+12. **¿Cómo funciona la búsqueda?** Coincidencia parcial, sin distinguir mayúsculas, por ticker o por nombre. El orden es: ticker exacto, ticker que empieza con lo buscado, nombre que lo contiene, ticker que lo contiene, y alfabético dentro de cada grupo. Devuelve 20 resultados por página por defecto y 50 como máximo, y se pagina con `offset`; la respuesta incluye el total de coincidencias. Si no se envía texto a buscar, el mismo endpoint lista todos los instrumentos disponibles (todos menos ARS), ordenados por ticker y también paginados.
 
 ## 1.4 Decisiones de negocio que surgieron durante la construcción
 
 - **Si un instrumento no tiene precio de mercado**, una orden MARKET sobre él se guarda como rechazada con el motivo "no market price available". Si la orden era por monto, en cambio, es un error 400 y no se guarda: sin precio no se puede saber cuántas acciones son, y una orden sin cantidad válida no se puede registrar.
 - **Si una posición no tiene precio**, el portfolio no falla: devuelve la posición con el valor y los rendimientos vacíos, la deja afuera del total y avisa con `totalIsPartial: true`. Además queda un aviso en los logs con el instrumento afectado. Preferimos mostrar algo y avisar claramente que el total es parcial antes que ocultar todo el portfolio.
+- **Se asume que todos los instrumentos cotizan en pesos (ARS).** La tabla de precios no tiene moneda y el enunciado pide precios en pesos, por eso el listado de instrumentos no indica moneda por instrumento; la respuesta del portfolio sí aclara `currency: "ARS"`. "Disponibles" significa todos los que no son ARS, incluso los dos que hoy no tienen precio de mercado (`PGR` y `IRCP`): una orden MARKET sobre ellos se rechaza.
 - **Los nombres de los importes no mencionan la moneda** (`availableAmount`, `committedAmount`, `buyableAmount`): así funcionan las plataformas que operan con varias monedas, donde cada importe va acompañado de un código de moneda. La respuesta del portfolio incluye `currency: "ARS"`. El proyecto maneja una sola moneda y no lleva saldos por moneda; si algún día hiciera falta, los nombres ya no habría que cambiarlos.
 - **Si una orden MARKET trae un precio**, se ignora en lugar de dar error: la orden se ejecuta al precio de mercado igualmente.
 - **Los valores monetarios** salen siempre con dos decimales y como texto (por ejemplo `"753000.00"`), nunca como número decimal.
@@ -96,7 +97,7 @@ Al revisar los datos iniciales encontramos rarezas que conviene conocer, porque 
 - Costo promedio por lotes (el primero que entra es el primero que sale), si se necesitara para impuestos.
 - Límites de monto por orden y por día, y horarios de mercado.
 - Órdenes ejecutadas parcialmente.
-- Historial de órdenes por usuario y paginación.
+- Historial de órdenes por usuario (con paginación, como el listado de instrumentos).
 
 ---
 
@@ -196,9 +197,9 @@ Verificamos todo contra la base local; **en ningún momento se tocó una base re
 
 ## 2.8 Cómo se probó
 
-- **Pruebas unitarias del cerebro** y del resto del código (109 pruebas, sin base de datos). Incluyen una prueba que arranca la aplicación completa (sin base de datos), para detectar errores de cableado entre módulos.
-- **Pruebas funcionales con base de datos** (39): usan la aplicación real contra una base temporal local. Cubren cada caso de la especificación: ejecución MARKET, orden LIMIT, compra por monto, rechazo por fondos, rechazo por tenencia, compromisos de LIMIT, instrumento sin precio, el portfolio de referencia del usuario 1 y la búsqueda; más la prueba de concurrencia de 2.4 y los casos de cancelación (liberar compromisos, órdenes que no se pueden cancelar, cancelación repetida, órdenes de otro usuario y dos cancelaciones simultáneas).
-- **Colección de Postman** (`docs/postman/`): 28 pedidos, uno por caso, con 109 verificaciones. Se ejecutó repetidas veces con Newman contra una base descartable. Ojo: los pedidos de órdenes **escriben** datos, por eso solo deben apuntar a una API conectada a la base local.
+- **Pruebas unitarias del cerebro** y del resto del código (114 pruebas, sin base de datos). Incluyen una prueba que arranca la aplicación completa (sin base de datos), para detectar errores de cableado entre módulos.
+- **Pruebas funcionales con base de datos** (44): usan la aplicación real contra una base temporal local. Cubren cada caso de la especificación: ejecución MARKET, orden LIMIT, compra por monto, rechazo por fondos, rechazo por tenencia, compromisos de LIMIT, instrumento sin precio, el portfolio de referencia del usuario 1 y la búsqueda; más la prueba de concurrencia de 2.4, el listado paginado de instrumentos y los casos de cancelación (liberar compromisos, órdenes que no se pueden cancelar, cancelación repetida, órdenes de otro usuario y dos cancelaciones simultáneas).
+- **Colección de Postman** (`docs/postman/`): 31 pedidos, uno por caso, con 121 verificaciones. Se ejecutó repetidas veces con Newman contra una base descartable. Ojo: los pedidos de órdenes **escriben** datos, por eso solo deben apuntar a una API conectada a la base local.
 
 ## 2.9 Limitaciones y convenciones técnicas vigentes
 
@@ -237,6 +238,7 @@ Cosas que conviene saber para continuar el proyecto:
 
 - Eventos o mensajería para notificaciones o auditoría (se evitó a propósito; si aparece un consumidor real, el camino previsto es registrar el evento en la misma transacción de la orden).
 - Caché de precios, versionado de la API y réplicas de lectura.
+- Paginación con cursor (en lugar de `offset`) en el listado de instrumentos, si el catálogo creciera mucho: con `offset`, un cambio del catálogo entre dos páginas podría saltear o repetir filas.
 
 ## 2.11 Lista corta antes de producción
 

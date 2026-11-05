@@ -78,11 +78,11 @@
 
 ### D11 — API contract and order flow (Phase 3)
 
-- **Endpoints:** `GET /users/:userId/portfolio`, `GET /instruments?q=&limit=`, `POST /users/:userId/orders` (Q7, Q12, Q4). Money and percentages are 2-decimal strings (half-up, never `-0.00`), rounded once in the HTTP layer; `null` where the domain returns null. JSON numbers are accepted for `amount`/`price` but normalized to decimal strings (at most 2 decimals, no exponent), never used as floats. Request bodies reject unknown fields.
+- **Endpoints:** `GET /users/:userId/portfolio`, `GET /instruments?q=&limit=&offset=`, `POST /users/:userId/orders` (Q7, Q12, D13, Q4). Money and percentages are 2-decimal strings (half-up, never `-0.00`), rounded once in the HTTP layer; `null` where the domain returns null. JSON numbers are accepted for `amount`/`price` but normalized to decimal strings (at most 2 decimals, no exponent), never used as floats. Request bodies reject unknown fields.
 - **Order flow:** one `READ COMMITTED` transaction: lock the user row with `SELECT ... FOR NO KEY UPDATE` (serializes order transactions per user, does not block foreign-key checks from other tables; also yields the 404), load the instrument, resolve the price (MARKET: latest `close`, stored as `price` per Q9; LIMIT: the user's price), resolve the quantity, load the user's `FILLED` and `NEW` orders, evaluate with the domain (Q3, D10) and insert. A rejection is stored and answered with 201, `status: REJECTED` and `reason`. Balances are computed by the domain over the user's active orders (single source of truth for the rules) instead of re-implemented as SQL aggregations; revisit with SQL aggregates if per-user order volume grows.
 - **Portfolio:** read in one `REPEATABLE READ READ ONLY` transaction so orders and prices are consistent; a position without market data is returned with null values and flagged through `totalIsPartial`, with a `logger.warn` carrying `userId` and `instrumentId` (D9).
 - **Errors:** invalid input is 400 and nothing is stored (`VALIDATION_ERROR`, `AMOUNT_BELOW_PRICE`, `INSTRUMENT_NOT_TRADABLE`, `INSTRUMENT_NOT_FOUND`, `NO_MARKET_PRICE`, ...); an unknown user in the path is 404. An unknown instrument in the body is 400 (it is a body reference, not a path resource). Out-of-range `limit` is a 400, not clamped. A `price` sent with a MARKET order is ignored (it executes at the market price), even if malformed; a LIMIT order requires a valid `price`.
-- **Search:** order is exact ticker, ticker prefix, name contains, then ticker contains; alphabetical by ticker within each group; ARS excluded; `%`, `_` and `\` are matched literally.
+- **Search:** order is exact ticker, ticker prefix, name contains, then ticker contains; alphabetical by ticker within each group; ARS excluded; `%`, `_` and `\` are matched literally; results are paginated (D13).
 - **Latest price:** the most recent `marketdata` row per instrument; if its `close` is null the instrument has no price (an older close is never used as a stand-in).
 - **Timestamps:** `orders.datetime` is written as UTC and read as UTC regardless of the process time zone, because the average cost walks orders chronologically.
 - **Tests:** `npm run test:db` runs functional tests through the real application against a throwaway `portfolio_test` database created inside the local compose Postgres; the setup refuses non-local hosts. They include a concurrency test: with the per-user lock exactly the affordable orders are filled; removing the lock makes it fail (verified).
@@ -95,6 +95,14 @@
 - **Concurrency:** it takes the same per-user lock as order submission, so it cannot interleave with a new order of that user, and the `UPDATE` is guarded by `status = 'NEW'` as a second protection. Two simultaneous cancellations of the same order both answer 200 and the order ends `CANCELLED` (tested).
 - **Effects:** the funds (LIMIT BUY) or shares (LIMIT SELL) the order committed are released implicitly, because commitments are computed from `NEW` orders (Q3). Tests show that an order rejected for lack of buyable balance succeeds after the cancellation. `availableAmount` is unchanged: a cancelled order never moved cash.
 - **Limits:** there is no cancellation timestamp (`datetime` keeps the creation time; recording it would need a new column). A client cannot tell a first cancellation from a repeated one, because the body is the same; the logs can (`order.cancelled` vs `order.cancel.repeated`).
+
+### D13 — Instrument listing and offset pagination
+
+- **Decision:** `GET /instruments` without `q` lists every tradable instrument, alphabetical by ticker (`ticker, id`); with `q` it searches as defined in Q12. Both are paginated with `limit` (default 20, maximum 50) and `offset` (default 0, maximum 100000), and the response is `{ items, total, limit, offset }`, where `total` is the size of the whole result ignoring paging. A `q` that is sent must not be blank (400); it is omitted to list.
+- **"Available" instruments:** every instrument whose type is not `MONEDA`, including those without market data (2 of the 65 in the seed: `PGR` and `IRCP`), which MARKET orders reject (D10). The listing carries no prices.
+- **Currency assumption:** all instruments are assumed to be priced in pesos (ARS). `marketdata` has no currency column and the challenge states that prices are in pesos, so neither the listing nor the quotes carry a currency per instrument; the `currency: "ARS"` field of the portfolio states the unit. Supporting more currencies would need a currency column on instruments or market data.
+- **Why offset:** the catalog is small (65 tradable instruments) and almost static, and offset is simple and allows jumping to any page. Its limits: if the catalog changed between two page requests rows could be skipped or repeated, and a large offset costs more; a keyset cursor over `(ticker, id)` is the alternative if the catalog grows. `total` costs one extra count query, cheap at this size.
+- **Compatibility:** the search behavior and its response fields are unchanged; the only incompatible change is that omitting `q` is no longer an error.
 
 ## Open questions
 
@@ -164,8 +172,8 @@ Resolutions of the twelve points in `docs/spec.md` ("Open questions"), confirmed
 
 ### Q12 — Search
 
-- **Decision:** `GET /instruments?q=`: partial, case-insensitive match on ticker or name, excluding ARS, with a result limit.
-- **Limit:** 20 results by default, 50 at most.
+- **Decision:** `GET /instruments?q=&limit=&offset=`: partial, case-insensitive match on ticker or name, excluding ARS. Without `q` the same endpoint lists every tradable instrument (D13).
+- **Limit:** 20 results per page by default, 50 at most; `offset` starts at 0.
 - **Ordering:** exact ticker match, then ticker starting with the query, then name containing the query; alphabetical within each group.
 - **Why:** simple and enough for 66 instruments.
 
