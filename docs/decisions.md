@@ -87,13 +87,22 @@
 - **Timestamps:** `orders.datetime` is written as UTC and read as UTC regardless of the process time zone, because the average cost walks orders chronologically.
 - **Tests:** `npm run test:db` runs functional tests through the real application against a throwaway `portfolio_test` database created inside the local compose Postgres; the setup refuses non-local hosts. They include a concurrency test: with the per-user lock exactly the affordable orders are filled; removing the lock makes it fail (verified).
 
+### D12 — Order cancellation endpoint
+
+- **Decision:** `POST /users/:userId/orders/:orderId/cancel`, without a body. It answers 200 with the order, now `CANCELLED`.
+- **Why a dedicated action and not PUT, PATCH or DELETE:** PUT replaces a whole resource, which is not what happens. PATCH with `{ "status": "CANCELLED" }` opens a generic status-mutation surface: with no authentication yet, clients could try to set `FILLED`, and the server would have to whitelist values; the state machine is better expressed as explicit transitions. DELETE is common in broker APIs, but here the order is not removed: it is kept as `CANCELLED` for the record, and cancelling is a transition with business rules. A named action also reads clearly in logs and in the Postman collection. Executing an order will be a separate internal transition, not an endpoint.
+- **Rules (Q1):** only `NEW` orders can be cancelled. Any other status answers 409 `ORDER_NOT_CANCELLABLE` with the current status in the message, including an order that is already `CANCELLED` (a repeated cancel is not idempotent: it is a 409). An order that does not exist, or belongs to another user, is a 404 (existence is not revealed); an unknown user is a 404; malformed ids are a 400.
+- **Concurrency:** it takes the same per-user lock as order submission, so it cannot interleave with a new order of that user, and the `UPDATE` is guarded by `status = 'NEW'` as a second protection. Two simultaneous cancellations of the same order give one 200 and one 409 (tested).
+- **Effects:** the pesos (LIMIT BUY) or shares (LIMIT SELL) the order committed are released implicitly, because commitments are computed from `NEW` orders (Q3). Tests show that an order rejected for lack of buyable balance succeeds after the cancellation. `availablePesos` is unchanged: a cancelled order never moved cash.
+- **Limits:** there is no cancellation timestamp (`datetime` keeps the creation time; recording it would need a new column). If clients that retry after a network failure need to treat a repeated cancel as success, the alternative is to answer 200 for an already `CANCELLED` order.
+
 ## Open questions
 
 Resolutions of the twelve points in `docs/spec.md` ("Open questions"), confirmed by the project owner's delegate on 2026-11-03. The numbering matches the spec.
 
 ### Q1 — Cancellation
 
-- **Decision:** implement an endpoint to cancel orders, only when `NEW` (becomes `CANCELLED`). Built after the core.
+- **Decision:** implement an endpoint to cancel orders, only when `NEW` (becomes `CANCELLED`). Built after the core; implemented as described in D12.
 - **Why:** the rules are already defined and the cost is low; the roadmap marks it optional.
 
 ### Q2 — Return

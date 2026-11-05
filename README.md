@@ -14,6 +14,7 @@ considered but not implemented).
 | `GET /users/:userId/portfolio` | Available and committed pesos, total value (`totalIsPartial` when a position has no price) and positions with returns |
 | `GET /instruments?q=&limit=` | Search by ticker or name (partial, case-insensitive; default 20, max 50) |
 | `POST /users/:userId/orders` | Submit a BUY or SELL, MARKET or LIMIT, by `quantity` or `amount` |
+| `POST /users/:userId/orders/:orderId/cancel` | Cancel an order that is still `NEW` (409 otherwise) |
 
 ```bash
 curl localhost:3000/users/1/portfolio
@@ -47,7 +48,7 @@ The database is published on host port 5433 to avoid clashing with a local Postg
 
 ## Postman
 
-`docs/postman/` holds the collection (23 requests, one per case, with assertions) and a `local`
+`docs/postman/` holds the collection (28 requests, one per case, with assertions) and a `local`
 environment (`baseUrl`, `userId`, ...). Import both into Postman, or run them from the terminal:
 
 ```bash
