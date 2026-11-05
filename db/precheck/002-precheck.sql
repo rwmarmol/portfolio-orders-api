@@ -1,6 +1,6 @@
--- Read-only pre-check for migration 002. Run it against a database BEFORE applying 002 to it.
--- Every query must return zero rows; any row is data (or an existing object) that would make
--- 002 fail or that other writers could trip over. It is not executed by scripts/migrate.mjs.
+-- Read-only pre-check for db/init/002-constraints-and-indexes.sql. Run it against a database
+-- BEFORE applying 002 to it. Every query must return zero rows; any row is data (or an existing
+-- object) that would make 002 fail or that other writers could trip over. Never run automatically.
 
 -- 1. orders.side outside the allowed set
 SELECT 'side' AS check_name, id, side AS value

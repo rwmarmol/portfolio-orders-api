@@ -1,11 +1,22 @@
-// Recreates the `portfolio_test` database inside the LOCAL docker-compose Postgres, loads the
-// baseline schema and seed, and applies the migrations. Refuses any non-local host.
-const { readFileSync } = require('node:fs');
+// Recreates the `portfolio_test` database inside the LOCAL docker-compose Postgres and loads the
+// same SQL files, in the same order, that the compose entrypoint runs (db/init). Refuses any
+// non-local host.
+const { readdirSync, readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const pg = require('pg');
 
 const TEST_DATABASE = 'portfolio_test';
 const COMPOSE_DEFAULT_URL = 'postgresql://portfolio:portfolio@localhost:5433/portfolio';
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+const INIT_DIR = join(__dirname, '..', '..', 'db', 'init');
+
+function isLocalDatabaseUrl(databaseUrl) {
+  try {
+    return LOCAL_HOSTS.has(new URL(databaseUrl).hostname);
+  } catch {
+    return false;
+  }
+}
 
 function withDatabase(baseUrl, database) {
   const url = new URL(baseUrl);
@@ -19,7 +30,6 @@ module.exports = async function globalSetup() {
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;
   }
-  const { isLocalDatabaseUrl, migrate } = await import('../../scripts/migrate.mjs');
 
   const baseUrl = process.env.DATABASE_URL ?? COMPOSE_DEFAULT_URL;
   if (!isLocalDatabaseUrl(baseUrl)) {
@@ -40,13 +50,15 @@ module.exports = async function globalSetup() {
   const client = new pg.Client({ connectionString: testUrl });
   await client.connect();
   try {
-    await client.query(
-      readFileSync(join(__dirname, '..', '..', 'db', 'init', '001-schema-and-seed.sql'), 'utf8'),
-    );
+    const files = readdirSync(INIT_DIR)
+      .filter((name) => name.endsWith('.sql'))
+      .sort();
+    for (const file of files) {
+      await client.query(readFileSync(join(INIT_DIR, file), 'utf8'));
+    }
   } finally {
     await client.end();
   }
-  await migrate(testUrl);
 
   process.env.TEST_DATABASE_URL = testUrl;
   process.env.TEST_ADMIN_DATABASE_URL = adminUrl;

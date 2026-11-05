@@ -1,4 +1,7 @@
 -- 002: constraints and indexes on the initial schema (see D8 in docs/decisions.md).
+-- Runs automatically after 001 the first time the local compose database starts. To apply it to
+-- an existing database, run db/precheck/002-precheck.sql first and then:
+--   psql -v ON_ERROR_STOP=1 --single-transaction -f db/init/002-constraints-and-indexes.sql
 -- CHECK constraints are added NOT VALID and then validated: the validation scan holds a weaker
 -- lock, so it is safe on a busy orders table.
 --
