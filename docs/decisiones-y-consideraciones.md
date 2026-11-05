@@ -19,7 +19,7 @@ Está pensado para quienes son dueños del proyecto y para el equipo de SRE que 
 
 El servicio tiene tres funciones:
 
-1. **Ver el portfolio** de un usuario: cuántos pesos tiene disponibles, qué instrumentos tiene, cuánto valen hoy y cuánto rindieron.
+1. **Ver el portfolio** de un usuario: cuánto dinero tiene disponible y cuánto puede usar para operar, qué instrumentos tiene, cuánto valen hoy y cuánto rindieron.
 2. **Buscar instrumentos** del mercado por ticker o por nombre.
 3. **Enviar órdenes** de compra o venta, a precio de mercado (MARKET) o a un precio límite (LIMIT), indicando una cantidad de acciones o un monto en pesos.
 
@@ -32,14 +32,16 @@ Quedaron **fuera de alcance** a propósito, porque la especificación lo dice:
 
 Todo se deduce de una sola tabla, la de **órdenes**, y de los precios de cierre más recientes. No hay una tabla aparte con "el saldo" ni con "las posiciones": se calculan cada vez. Es como el extracto de una cuenta bancaria: el saldo no se guarda, se obtiene sumando todos los movimientos.
 
-- **Pesos disponibles**: se suman los movimientos ya ejecutados. Un ingreso de dinero y una venta suman; un retiro y una compra restan (cantidad por precio).
+- **Monto disponible** (`availableAmount`): se suman los movimientos ya ejecutados. Un ingreso de dinero y una venta suman; un retiro y una compra restan (cantidad por precio).
+- **Monto comprometido** (`committedAmount`): lo que ya prometieron las órdenes de compra LIMIT que siguen pendientes.
+- **Monto operable** (`buyableAmount`): el monto disponible menos el comprometido. Es lo que realmente puede usar una orden nueva.
 - **Posición en un instrumento**: compras menos ventas, contando solo órdenes ejecutadas.
 - **Valor de una posición**: cantidad por el último precio de cierre.
-- **Valor total de la cuenta**: pesos disponibles más el valor de todas las posiciones.
+- **Valor total de la cuenta**: monto disponible más el valor de todas las posiciones (el monto comprometido no se resta, porque ese dinero sigue siendo del usuario).
 - **Rendimiento diario**: cuánto cambió el cierre de hoy respecto del cierre anterior.
 - **Rendimiento total**: cuánto cambió el precio actual respecto de lo que le costó en promedio al usuario (ver 1.3, punto 2).
 
-Con los datos de ejemplo del usuario 1, los números de referencia son: **753.000 pesos** disponibles, **40** acciones de Pampa (instrumento 47), **500** de MetroGAS (54) y **-10** de Banco Macro (31). Los tests del proyecto comprueban exactamente estos valores.
+Con los datos de ejemplo del usuario 1, los números de referencia son: **753.000** de monto disponible (125.500 comprometidos y 627.500 operables), **40** acciones de Pampa (instrumento 47), **500** de MetroGAS (54) y **-10** de Banco Macro (31). Los tests del proyecto comprueban exactamente estos valores.
 
 ## 1.3 Las 12 preguntas que la especificación dejaba abiertas
 
@@ -47,7 +49,7 @@ La especificación tenía doce puntos sin definir. Nosotros no los decidimos: pr
 
 1. **¿Se pueden cancelar órdenes?** Sí, pero solo las que están en estado NEW. Ya está implementado como un endpoint propio (`POST /users/{id}/orders/{orderId}/cancel`): se eligió una acción con nombre propio, en lugar de modificar la orden con PUT o PATCH, para que nadie pueda intentar poner una orden en un estado cualquiera (por ejemplo "ejecutada"), y no se usó DELETE porque la orden no se borra, queda registrada como CANCELLED. Cancelar libera automáticamente los pesos o acciones que esa orden tenía comprometidos. Es **idempotente**: si se repite la cancelación de una orden que ya estaba cancelada, responde éxito con la misma orden y no cambia nada, para que un cliente pueda reintentar sin riesgo tras un corte de red. Si la orden ya se ejecutó o fue rechazada, responde error 409; si no existe o es de otro usuario, 404.
 2. **¿Cómo se calcula el rendimiento?** Se muestran **dos** números por posición: el diario (cierre de hoy contra el de ayer) y el total (contra el costo promedio de compra). El costo promedio es un *promedio ponderado móvil*: cada compra lo actualiza; una venta baja la cantidad pero no cambia el promedio; si la cantidad llega a cero, se reinicia. Si la cantidad es cero o negativa, el rendimiento total no se calcula y se muestra vacío. Si el usuario compra estando en negativo, la compra primero cubre el faltante: si queda en positivo, el promedio pasa a ser el precio de esa compra.
-3. **¿Una orden LIMIT reserva fondos?** No se reserva nada en ninguna tabla. Pero cuando llega una orden nueva, se mira el saldo **descontando lo ya comprometido** en las órdenes LIMIT pendientes. Así nadie puede prometer dos veces los mismos pesos ni las mismas acciones. Esto aplica también a las órdenes MARKET.
+3. **¿Una orden LIMIT reserva fondos?** No se reserva nada en ninguna tabla. Pero cuando llega una orden nueva, se mira el saldo **descontando lo ya comprometido** en las órdenes LIMIT pendientes. Así nadie puede prometer dos veces los mismos fondos ni las mismas acciones. Esto aplica también a las órdenes MARKET.
 4. **¿Qué se responde cuando una orden se rechaza?** La orden **se guarda** con estado REJECTED y el servicio responde éxito (HTTP 201) con el motivo ("insufficient funds", "insufficient holdings" o "no market price available"). Un pedido mal formado, en cambio, da error 400 y **no se guarda**.
 5. **¿Qué ejecuta una orden LIMIT?** Nada, porque no hay simulación de mercado. Queda en NEW. La orden LIMIT ya ejecutada que aparece en los datos de ejemplo es solo un dato histórico.
 6. **¿Y los ingresos y retiros de dinero?** Van por un endpoint propio y opcional (*todavía no implementado*). Un retiro valida contra el saldo que se puede usar (efectivo menos lo comprometido en LIMIT).
@@ -55,13 +57,15 @@ La especificación tenía doce puntos sin definir. Nosotros no los decidimos: pr
 8. **¿Qué pasa si el monto no alcanza para una acción, o si mandan cantidad y monto a la vez?** En los dos casos es un error 400 y no se guarda nada. Cuando se envía un monto, la cantidad es el máximo número **entero** de acciones que entra (no hay fracciones).
 9. **¿Qué precio se guarda en una orden MARKET?** El precio de cierre usado al ejecutar, porque las cuentas de saldo necesitan cantidad por precio.
 10. **¿Qué hacemos con la posición de -10?** Se muestra tal cual, se documenta como una anomalía de los datos de ejemplo y las ventas nuevas la impiden.
-11. **¿Qué pasa con ARS (el dinero)?** Aparece solo como "pesos disponibles", nunca como una posición. Intentar comprar o vender ARS da error 400. Tampoco aparece en las búsquedas.
+11. **¿Qué pasa con ARS (el dinero)?** Aparece solo como monto disponible, nunca como una posición. Intentar comprar o vender ARS da error 400. Tampoco aparece en las búsquedas.
 12. **¿Cómo funciona la búsqueda?** Coincidencia parcial, sin distinguir mayúsculas, por ticker o por nombre. El orden es: ticker exacto, ticker que empieza con lo buscado, nombre que lo contiene, ticker que lo contiene, y alfabético dentro de cada grupo. Devuelve 20 resultados por defecto y 50 como máximo.
 
 ## 1.4 Decisiones de negocio que surgieron durante la construcción
 
 - **Si un instrumento no tiene precio de mercado**, una orden MARKET sobre él se guarda como rechazada con el motivo "no market price available". Si la orden era por monto, en cambio, es un error 400 y no se guarda: sin precio no se puede saber cuántas acciones son, y una orden sin cantidad válida no se puede registrar.
 - **Si una posición no tiene precio**, el portfolio no falla: devuelve la posición con el valor y los rendimientos vacíos, la deja afuera del total y avisa con `totalIsPartial: true`. Además queda un aviso en los logs con el instrumento afectado. Preferimos mostrar algo y avisar claramente que el total es parcial antes que ocultar todo el portfolio.
+- **Los nombres de los importes no mencionan la moneda** (`availableAmount`, `committedAmount`, `buyableAmount`): así funcionan las plataformas que operan con varias monedas, donde cada importe va acompañado de un código de moneda. La respuesta del portfolio incluye `currency: "ARS"`. El proyecto maneja una sola moneda y no lleva saldos por moneda; si algún día hiciera falta, los nombres ya no habría que cambiarlos.
+- **Si una orden MARKET trae un precio**, se ignora en lugar de dar error: la orden se ejecuta al precio de mercado igualmente.
 - **Los valores monetarios** salen siempre con dos decimales y como texto (por ejemplo `"753000.00"`), nunca como número decimal.
 
 ## 1.5 Hallazgos en los datos de ejemplo
@@ -83,7 +87,7 @@ Al revisar los datos iniciales encontramos rarezas que conviene conocer, porque 
 
 **Discutido y descartado**
 
-- **Tabla de reservas de fondos**: se descartó porque, sin motor de ejecución, una orden LIMIT nunca se ejecuta y los pesos reservados quedarían bloqueados para siempre. Se resolvió descontando lo comprometido al calcular.
+- **Tabla de reservas de fondos**: se descartó porque, sin motor de ejecución, una orden LIMIT nunca se ejecuta y los fondos reservados quedarían bloqueados para siempre. Se resolvió descontando lo comprometido al calcular.
 - **Tabla de posiciones**: se descartó porque duplicaría información que ya está en las órdenes y habría que mantenerla sincronizada.
 
 **Ideas "extra" que no se discutieron ni se implementaron** (podrían sumarse más adelante)
@@ -192,9 +196,9 @@ Verificamos todo contra la base local; **en ningún momento se tocó una base re
 
 ## 2.8 Cómo se probó
 
-- **Pruebas unitarias del cerebro** y del resto del código (107 pruebas, sin base de datos). Incluyen una prueba que arranca la aplicación completa (sin base de datos), para detectar errores de cableado entre módulos.
-- **Pruebas funcionales con base de datos** (38): usan la aplicación real contra una base temporal local. Cubren cada caso de la especificación: ejecución MARKET, orden LIMIT, compra por monto, rechazo por fondos, rechazo por tenencia, compromisos de LIMIT, instrumento sin precio, el portfolio de referencia del usuario 1 y la búsqueda; más la prueba de concurrencia de 2.4 y los casos de cancelación (liberar compromisos, órdenes que no se pueden cancelar, cancelación repetida, órdenes de otro usuario y dos cancelaciones simultáneas).
-- **Colección de Postman** (`docs/postman/`): 28 pedidos, uno por caso, con 107 verificaciones. Se ejecutó repetidas veces con Newman contra una base descartable. Ojo: los pedidos de órdenes **escriben** datos, por eso solo deben apuntar a una API conectada a la base local.
+- **Pruebas unitarias del cerebro** y del resto del código (109 pruebas, sin base de datos). Incluyen una prueba que arranca la aplicación completa (sin base de datos), para detectar errores de cableado entre módulos.
+- **Pruebas funcionales con base de datos** (39): usan la aplicación real contra una base temporal local. Cubren cada caso de la especificación: ejecución MARKET, orden LIMIT, compra por monto, rechazo por fondos, rechazo por tenencia, compromisos de LIMIT, instrumento sin precio, el portfolio de referencia del usuario 1 y la búsqueda; más la prueba de concurrencia de 2.4 y los casos de cancelación (liberar compromisos, órdenes que no se pueden cancelar, cancelación repetida, órdenes de otro usuario y dos cancelaciones simultáneas).
+- **Colección de Postman** (`docs/postman/`): 28 pedidos, uno por caso, con 109 verificaciones. Se ejecutó repetidas veces con Newman contra una base descartable. Ojo: los pedidos de órdenes **escriben** datos, por eso solo deben apuntar a una API conectada a la base local.
 
 ## 2.9 Limitaciones y convenciones técnicas vigentes
 

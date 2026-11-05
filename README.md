@@ -11,7 +11,7 @@ considered but not implemented).
 | Endpoint | Description |
 | --- | --- |
 | `GET /health` | Liveness and database check |
-| `GET /users/:userId/portfolio` | Available and committed pesos, total value (`totalIsPartial` when a position has no price) and positions with returns |
+| `GET /users/:userId/portfolio` | Currency (`ARS`), available, committed and buyable amounts, total value (`totalIsPartial` when a position has no price) and positions with returns |
 | `GET /instruments?q=&limit=` | Search by ticker or name (partial, case-insensitive; default 20, max 50) |
 | `POST /users/:userId/orders` | Submit a BUY or SELL, MARKET or LIMIT, by `quantity` or `amount` |
 | `POST /users/:userId/orders/:orderId/cancel` | Cancel an order that is still `NEW` (idempotent; 409 if it is `FILLED` or `REJECTED`) |
