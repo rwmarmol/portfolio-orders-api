@@ -36,7 +36,7 @@ describe('assertTradable', () => {
 });
 
 describe('evaluateOrder', () => {
-  const base = { size: 10, price: '100', buyablePesos: '1000', sellableShares: 10 };
+  const base = { size: 10, price: '100', buyableAmount: '1000', sellableShares: 10 };
 
   it('fills a MARKET order and leaves a LIMIT order NEW', () => {
     expect(evaluateOrder({ ...base, side: 'BUY', type: 'MARKET' })).toEqual({ status: 'FILLED' });
@@ -44,17 +44,17 @@ describe('evaluateOrder', () => {
     expect(evaluateOrder({ ...base, side: 'SELL', type: 'MARKET' })).toEqual({ status: 'FILLED' });
   });
 
-  it('accepts a BUY that costs exactly the buyable pesos', () => {
+  it('accepts a BUY that costs exactly the buyable amount', () => {
     expect(evaluateOrder({ ...base, side: 'BUY', type: 'MARKET' }).status).toBe('FILLED');
   });
 
-  it('rejects a BUY above the buyable pesos', () => {
-    expect(evaluateOrder({ ...base, side: 'BUY', type: 'MARKET', buyablePesos: '999.99' })).toEqual(
-      {
-        status: 'REJECTED',
-        reason: 'INSUFFICIENT_FUNDS',
-      },
-    );
+  it('rejects a BUY above the buyable amount', () => {
+    expect(
+      evaluateOrder({ ...base, side: 'BUY', type: 'MARKET', buyableAmount: '999.99' }),
+    ).toEqual({
+      status: 'REJECTED',
+      reason: 'INSUFFICIENT_FUNDS',
+    });
   });
 
   it('rejects a SELL above the sellable shares, including negative holdings', () => {

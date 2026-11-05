@@ -1,6 +1,6 @@
 import {
-  buyablePesos,
-  committedPesos,
+  buyableAmount,
+  committedAmount,
   committedShares,
   filledCash,
   netQuantities,
@@ -10,7 +10,7 @@ import {
 import { order, SEED_ORDERS_USER_1 } from './seed-orders.fixture';
 
 describe('ledger with the seed data of user 1', () => {
-  it('computes available pesos from FILLED movements only (reference value 753,000)', () => {
+  it('computes the available amount from FILLED movements only (reference value 753,000)', () => {
     expect(filledCash(SEED_ORDERS_USER_1).toFixed(2)).toBe('753000.00');
   });
 
@@ -25,9 +25,9 @@ describe('ledger with the seed data of user 1', () => {
     ]);
   });
 
-  it('commits pesos for NEW LIMIT BUY orders and nets them from the buyable balance', () => {
-    expect(committedPesos(SEED_ORDERS_USER_1).toFixed(2)).toBe('125500.00');
-    expect(buyablePesos(SEED_ORDERS_USER_1).toFixed(2)).toBe('627500.00');
+  it('commits funds for NEW LIMIT BUY orders and nets them from the buyable balance', () => {
+    expect(committedAmount(SEED_ORDERS_USER_1).toFixed(2)).toBe('125500.00');
+    expect(buyableAmount(SEED_ORDERS_USER_1).toFixed(2)).toBe('627500.00');
   });
 
   it('does not commit shares for BUY orders and nets NEW LIMIT SELL from sellable shares', () => {

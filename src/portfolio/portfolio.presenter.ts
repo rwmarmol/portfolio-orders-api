@@ -15,8 +15,8 @@ export interface PositionResponse {
 
 export interface PortfolioResponse {
   userId: number;
-  availablePesos: string;
-  committedPesos: string;
+  availableAmount: string;
+  committedAmount: string;
   totalValue: string;
   totalIsPartial: boolean;
   positions: PositionResponse[];
@@ -29,8 +29,8 @@ export function presentPortfolio(
 ): PortfolioResponse {
   return {
     userId,
-    availablePesos: formatDecimal(portfolio.availablePesos),
-    committedPesos: formatDecimal(portfolio.committedPesos),
+    availableAmount: formatDecimal(portfolio.availableAmount),
+    committedAmount: formatDecimal(portfolio.committedAmount),
     totalValue: formatDecimal(portfolio.totalValue),
     totalIsPartial: portfolio.totalIsPartial,
     positions: portfolio.positions.map((position) => {

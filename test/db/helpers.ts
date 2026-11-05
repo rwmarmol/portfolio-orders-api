@@ -62,13 +62,13 @@ export async function insertOrder(pool: Pool, order: SeedOrder): Promise<void> {
   );
 }
 
-/** Credits pesos with a FILLED CASH_IN on the cash instrument. */
-export function fund(pool: Pool, userId: number, pesos: number): Promise<void> {
+/** Credits funds with a FILLED CASH_IN on the cash instrument. */
+export function fund(pool: Pool, userId: number, amount: number): Promise<void> {
   return insertOrder(pool, {
     userId,
     instrumentId: CASH_INSTRUMENT_ID,
     side: 'CASH_IN',
-    size: pesos,
+    size: amount,
     price: '1',
   });
 }

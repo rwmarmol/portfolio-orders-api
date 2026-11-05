@@ -49,12 +49,12 @@ describe('concurrent orders of one user (database)', () => {
     expect(statuses.filter((s) => s === 'FILLED')).toHaveLength(affordable);
     expect(statuses.filter((s) => s === 'REJECTED')).toHaveLength(attempts - affordable);
 
-    const { rows } = await pool.query<{ pesos: string }>(
-      `SELECT sum(CASE WHEN side IN ('CASH_IN', 'SELL') THEN size * price ELSE -size * price END)::text AS pesos
+    const { rows } = await pool.query<{ balance: string }>(
+      `SELECT sum(CASE WHEN side IN ('CASH_IN', 'SELL') THEN size * price ELSE -size * price END)::text AS balance
          FROM orders WHERE userid = $1 AND status = 'FILLED'`,
       [userId],
     );
-    expect(new D(rows[0]!.pesos).gte(0)).toBe(true);
+    expect(new D(rows[0]!.balance).gte(0)).toBe(true);
   });
 
   it('serializes two orders that together exceed the balance: one fills, one is rejected', async () => {

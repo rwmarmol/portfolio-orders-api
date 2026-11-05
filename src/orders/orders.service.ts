@@ -4,7 +4,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '../common/errors/
 import { TransactionRunner } from '../database/transaction-runner';
 import {
   assertTradable,
-  buyablePesos,
+  buyableAmount,
   evaluateOrder,
   evaluateCancellation,
   resolveQuantity,
@@ -78,7 +78,7 @@ export class OrdersService {
         type: input.type,
         size,
         price,
-        buyablePesos: buyablePesos(active),
+        buyableAmount: buyableAmount(active),
         sellableShares: sellableShares(active, instrument.id),
       });
 
@@ -114,7 +114,7 @@ export class OrdersService {
 
   /**
    * Cancels a NEW order (Q1, D12). Runs under the same per-user lock as order submission, so a
-   * cancellation cannot interleave with a new order of that user. The pesos or shares the order
+   * cancellation cannot interleave with a new order of that user. The funds or shares the order
    * committed are released implicitly: commitments are computed from NEW orders (Q3).
    * Idempotent: cancelling an already CANCELLED order succeeds and changes nothing.
    */

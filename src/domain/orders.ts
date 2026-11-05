@@ -7,7 +7,7 @@ const MAX_SIZE = 2_147_483_647;
 
 export interface QuantityInput {
   quantity?: number | undefined;
-  /** Total amount in pesos to invest. */
+  /** Total amount to invest, in the account currency. */
   amount?: DecValue | undefined;
   /** Price per share: the latest close for MARKET, the user's price for LIMIT. */
   price: DecValue;
@@ -91,8 +91,8 @@ export interface EvaluateOrderInput {
    * user's price for LIMIT (required).
    */
   price: DecValue | null;
-  /** `buyablePesos` of the user, already net of NEW LIMIT BUY commitments. */
-  buyablePesos: DecValue;
+  /** `buyableAmount` of the user, already net of NEW LIMIT BUY commitments. */
+  buyableAmount: DecValue;
   /** `sellableShares` of the user for the instrument, already net of NEW LIMIT SELL commitments. */
   sellableShares: number;
 }
@@ -109,7 +109,7 @@ export function evaluateOrder(input: EvaluateOrderInput): OrderEvaluation {
   }
   if (input.side === 'BUY') {
     const cost: Dec = new D(input.price).times(input.size);
-    if (cost.gt(input.buyablePesos)) return { status: 'REJECTED', reason: 'INSUFFICIENT_FUNDS' };
+    if (cost.gt(input.buyableAmount)) return { status: 'REJECTED', reason: 'INSUFFICIENT_FUNDS' };
   } else if (input.size > input.sellableShares) {
     return { status: 'REJECTED', reason: 'INSUFFICIENT_HOLDINGS' };
   }

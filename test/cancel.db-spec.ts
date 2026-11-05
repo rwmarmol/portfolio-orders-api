@@ -47,11 +47,11 @@ describe('POST /users/:userId/orders/:orderId/cancel (database)', () => {
     price,
   });
 
-  it('cancels a NEW LIMIT BUY and releases the pesos it committed', async () => {
+  it('cancels a NEW LIMIT BUY and releases the funds it committed', async () => {
     const userId = await createUser(pool);
     await fund(pool, userId, 10_000);
     const limit = await submit(userId, limitOrder('BUY', 5, '1000')); // 5,000 committed
-    expect((await portfolio(userId)).committedPesos).toBe('5000.00');
+    expect((await portfolio(userId)).committedAmount).toBe('5000.00');
 
     // Six shares at the latest close do not fit in the 5,000 still buyable.
     expect((await submit(userId, marketOrder('BUY', 6))).status).toBe('REJECTED');
@@ -60,8 +60,8 @@ describe('POST /users/:userId/orders/:orderId/cancel (database)', () => {
     expect(res.body).toMatchObject({ id: limit.id, status: 'CANCELLED', userId, size: 5 });
 
     const after = await portfolio(userId);
-    expect(after.committedPesos).toBe('0.00');
-    expect(after.availablePesos).toBe('10000.00'); // a cancelled order never moved cash
+    expect(after.committedAmount).toBe('0.00');
+    expect(after.availableAmount).toBe('10000.00'); // a cancelled order never moved cash
     expect((await submit(userId, marketOrder('BUY', 6))).status).toBe('FILLED');
   });
 
@@ -111,7 +111,7 @@ describe('POST /users/:userId/orders/:orderId/cancel (database)', () => {
       expect(again.status).toBe(200);
       expect(again.body).toEqual(first.body);
       expect(await statusOf(limit.id)).toBe('CANCELLED');
-      expect((await portfolio(userId)).committedPesos).toBe('0.00');
+      expect((await portfolio(userId)).committedAmount).toBe('0.00');
     });
 
     it('answers 200 to both of two simultaneous cancellations of the same order', async () => {

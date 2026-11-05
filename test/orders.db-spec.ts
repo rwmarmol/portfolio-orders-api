@@ -60,12 +60,12 @@ describe('POST /users/:userId/orders (database)', () => {
     expect(res.body.reason).toBeUndefined();
 
     const body = await portfolio(userId);
-    expect(body.availablePesos).toBe(money(new D(100_000).minus(new D(close).times(10))));
+    expect(body.availableAmount).toBe(money(new D(100_000).minus(new D(close).times(10))));
     expect(body.positions).toHaveLength(1);
     expect(body.positions[0]).toMatchObject({ instrumentId: PRICED_INSTRUMENT_ID, quantity: 10 });
   });
 
-  it('stores a LIMIT BUY as NEW with the user price and commits the pesos', async () => {
+  it('stores a LIMIT BUY as NEW with the user price and commits the funds', async () => {
     const userId = await createUser(pool);
     await fund(pool, userId, 100_000);
 
@@ -75,8 +75,8 @@ describe('POST /users/:userId/orders (database)', () => {
     expect(res.body).toMatchObject({ status: 'NEW', price: '900.00', size: 5 });
 
     const body = await portfolio(userId);
-    expect(body.availablePesos).toBe('100000.00');
-    expect(body.committedPesos).toBe('4500.00');
+    expect(body.availableAmount).toBe('100000.00');
+    expect(body.committedAmount).toBe('4500.00');
     expect(body.positions).toEqual([]);
   });
 
@@ -94,14 +94,14 @@ describe('POST /users/:userId/orders (database)', () => {
     expect(res.body).toMatchObject({ status: 'FILLED', size: 3 });
   });
 
-  it('stores a BUY above the buyable pesos as REJECTED and leaves the balance untouched', async () => {
+  it('stores a BUY above the buyable amount as REJECTED and leaves the balance untouched', async () => {
     const userId = await createUser(pool);
     await fund(pool, userId, 1_000);
 
     const res = await post(userId, market('BUY', 100)).expect(201);
     expect(res.body).toMatchObject({ status: 'REJECTED', reason: 'insufficient funds' });
     expect(await countOrders(pool, userId)).toBe(2); // the funding and the rejected order
-    expect((await portfolio(userId)).availablePesos).toBe('1000.00');
+    expect((await portfolio(userId)).availableAmount).toBe('1000.00');
   });
 
   it('rejects a SELL without holdings, including the negative position of the seed', async () => {
@@ -115,7 +115,7 @@ describe('POST /users/:userId/orders (database)', () => {
     expect(negative.body).toMatchObject({ status: 'REJECTED', reason: 'insufficient holdings' });
   });
 
-  it('fills a SELL of owned shares and credits the pesos', async () => {
+  it('fills a SELL of owned shares and credits the funds', async () => {
     const userId = await createUser(pool);
     await fund(pool, userId, 9_000); // pays for the 10 shares bought below at 900
     await insertOrder(pool, {
@@ -129,11 +129,11 @@ describe('POST /users/:userId/orders (database)', () => {
     const res = await post(userId, market('SELL', 4)).expect(201);
     expect(res.body).toMatchObject({ status: 'FILLED', price: close });
     const body = await portfolio(userId);
-    expect(body.availablePesos).toBe(money(new D(close).times(4)));
+    expect(body.availableAmount).toBe(money(new D(close).times(4)));
     expect(body.positions[0]).toMatchObject({ quantity: 6 });
   });
 
-  it('nets the pesos committed by NEW LIMIT BUY orders, also for MARKET orders', async () => {
+  it('nets the funds committed by NEW LIMIT BUY orders, also for MARKET orders', async () => {
     const userId = await createUser(pool);
     await fund(pool, userId, 10_000);
     await post(userId, { ...market('BUY', 5), type: 'LIMIT', price: '1000' }).expect(201); // 5,000 committed

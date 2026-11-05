@@ -1,6 +1,6 @@
 import { costBasis } from './average-cost';
 import { D, Dec } from './decimal';
-import { committedPesos, filledCash, openPositions } from './ledger';
+import { committedAmount, filledCash, openPositions } from './ledger';
 import { dailyReturnPct, totalReturnPct } from './returns';
 import type { MarketQuote, OrderRecord } from './types';
 
@@ -18,10 +18,10 @@ export interface PositionView {
 
 export interface Portfolio {
   /** FILLED cash. */
-  availablePesos: Dec;
-  /** Pesos committed by NEW LIMIT BUY orders. */
-  committedPesos: Dec;
-  /** availablePesos plus the market value of the positions that have a price. */
+  availableAmount: Dec;
+  /** Funds committed by NEW LIMIT BUY orders. */
+  committedAmount: Dec;
+  /** availableAmount plus the market value of the positions that have a price. */
   totalValue: Dec;
   /** True when at least one position has no market data and is left out of `totalValue`. */
   totalIsPartial: boolean;
@@ -47,8 +47,8 @@ export function buildPortfolio(
   quotes: ReadonlyMap<number, MarketQuote>,
   { onMissingMarketData }: BuildPortfolioOptions = {},
 ): Portfolio {
-  const availablePesos = filledCash(orders);
-  let totalValue = availablePesos;
+  const availableAmount = filledCash(orders);
+  let totalValue = availableAmount;
   let totalIsPartial = false;
 
   const positions = openPositions(orders).map(({ instrumentId, quantity }): PositionView => {
@@ -79,8 +79,8 @@ export function buildPortfolio(
   });
 
   return {
-    availablePesos,
-    committedPesos: committedPesos(orders),
+    availableAmount,
+    committedAmount: committedAmount(orders),
     totalValue,
     totalIsPartial,
     positions,

@@ -30,8 +30,8 @@ describe('GET /users/:userId/portfolio (database)', () => {
   it('matches the reference values of seed user 1', async () => {
     const { body } = await get(1).expect(200);
 
-    expect(body.availablePesos).toBe('753000.00');
-    expect(body.committedPesos).toBe('125500.00');
+    expect(body.availableAmount).toBe('753000.00');
+    expect(body.committedAmount).toBe('125500.00');
     expect(body.totalIsPartial).toBe(false);
 
     const quantities = Object.fromEntries(
@@ -56,8 +56,8 @@ describe('GET /users/:userId/portfolio (database)', () => {
     const userId = await createUser(pool);
     const { body } = await get(userId).expect(200);
     expect(body).toMatchObject({
-      availablePesos: '0.00',
-      committedPesos: '0.00',
+      availableAmount: '0.00',
+      committedAmount: '0.00',
       totalValue: '0.00',
       totalIsPartial: false,
       positions: [],
@@ -72,7 +72,7 @@ describe('GET /users/:userId/portfolio (database)', () => {
 
     const { body } = await get(userId).expect(200);
     expect(body.totalIsPartial).toBe(true);
-    expect(body.availablePesos).toBe('930.00'); // 1,000 - 7 * 10
+    expect(body.availableAmount).toBe('930.00'); // 1,000 - 7 * 10
     expect(body.totalValue).toBe('930.00'); // the unpriced position is left out
     expect(body.positions).toEqual([
       {

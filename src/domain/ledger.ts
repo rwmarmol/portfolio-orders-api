@@ -5,7 +5,7 @@ function notional(order: OrderRecord): Dec {
   return new D(order.price).times(order.size);
 }
 
-/** Pesos from FILLED movements: CASH_IN and SELL add, CASH_OUT and BUY subtract. */
+/** Cash from FILLED movements: CASH_IN and SELL add, CASH_OUT and BUY subtract. */
 export function filledCash(orders: readonly OrderRecord[]): Dec {
   let total = new D(0);
   for (const order of orders) {
@@ -24,8 +24,8 @@ export function filledCash(orders: readonly OrderRecord[]): Dec {
   return total;
 }
 
-/** Pesos committed by NEW LIMIT BUY orders (no reservation table; see decision Q3). */
-export function committedPesos(orders: readonly OrderRecord[]): Dec {
+/** Funds committed by NEW LIMIT BUY orders (no reservation table; see decision Q3). */
+export function committedAmount(orders: readonly OrderRecord[]): Dec {
   let total = new D(0);
   for (const order of orders) {
     if (order.status === 'NEW' && order.type === 'LIMIT' && order.side === 'BUY') {
@@ -35,9 +35,9 @@ export function committedPesos(orders: readonly OrderRecord[]): Dec {
   return total;
 }
 
-/** Pesos a new order can use: FILLED cash minus what NEW LIMIT BUY orders commit. */
-export function buyablePesos(orders: readonly OrderRecord[]): Dec {
-  return filledCash(orders).minus(committedPesos(orders));
+/** Funds a new order can use: FILLED cash minus what NEW LIMIT BUY orders commit. */
+export function buyableAmount(orders: readonly OrderRecord[]): Dec {
+  return filledCash(orders).minus(committedAmount(orders));
 }
 
 /** Net quantity per instrument from FILLED BUY/SELL orders. Cash movements are ignored. */

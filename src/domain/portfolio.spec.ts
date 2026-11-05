@@ -20,8 +20,8 @@ describe('buildPortfolio', () => {
   it('builds the portfolio of user 1 from the seed', () => {
     const portfolio = buildPortfolio(SEED_ORDERS_USER_1, quotes);
 
-    expect(portfolio.availablePesos.toFixed(2)).toBe('753000.00');
-    expect(portfolio.committedPesos.toFixed(2)).toBe('125500.00');
+    expect(portfolio.availableAmount.toFixed(2)).toBe('753000.00');
+    expect(portfolio.committedAmount.toFixed(2)).toBe('125500.00');
     // 753,000 + (-10 * 1500) + (40 * 1000) + (500 * 260)
     expect(portfolio.totalValue.toFixed(2)).toBe('908000.00');
 
@@ -42,7 +42,7 @@ describe('buildPortfolio', () => {
     expect(byInstrument.get(54)?.totalReturnPct?.toFixed(2)).toBe('4.00');
   });
 
-  it('returns only pesos for a user without orders', () => {
+  it('returns only zero amounts for a user without orders', () => {
     const portfolio = buildPortfolio([], quotes);
     expect(portfolio.positions).toEqual([]);
     expect(portfolio.totalValue.toFixed(2)).toBe('0.00');
