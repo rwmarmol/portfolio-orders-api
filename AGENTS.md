@@ -20,7 +20,6 @@ correctness, security, maintainability and operability matter from day one.
 | `docker compose up -d --wait` | Start the local Postgres (loads `db/init/*.sql` on first start only) |
 | `docker compose down -v` | Stop and delete the local database volume (forces a re-seed) |
 | `docker build -t portfolio-orders-api .` | Build the production image (configuration only via env vars) |
-| `npm run db:migrate` | Apply pending migrations from `db/migrations/` (runner refuses non-local hosts) |
 | `npm run start:dev` | Run the API in watch mode |
 | `npm run build` | Compile to `dist/` |
 | `npm test` | Run unit and e2e tests (Jest, no database needed) |
@@ -45,9 +44,8 @@ src/
   health/          GET /health
   domain/          pure functions only (no I/O, no Nest, no pg)
 test/              e2e tests (*.e2e-spec.ts, no DB) and database-backed tests (*.db-spec.ts)
-db/init/           baseline schema and seed, loaded by docker compose on first start
-db/migrations/     versioned SQL migrations (+ read-only prechecks); scripts/migrate.mjs applies them
-scripts/           operational scripts (migration runner)
+db/init/           001 baseline schema and seed, 002 constraints and indexes; loaded in order by docker compose on first start
+db/precheck/       read-only checks to run before applying db/init/002 to an existing database
 docs/              spec and decisions
 ```
 
@@ -71,8 +69,8 @@ Errors: throw `AppError` subclasses from services; the global filter produces
   `previousclose`, `accountnumber`). Use double quotes or explicit aliases whenever you want camelCase.
 - **Orders:** validate funds or holdings and insert the order in a single transaction, with a
   per-user lock.
-- **Databases:** tests and migrations run only against the local docker-compose Postgres. Never
-  write to or migrate a shared or remote database unless the user explicitly asks.
+- **Databases:** tests and schema changes run only against the local docker-compose Postgres. Never
+  write to or change the schema of a shared or remote database unless the user explicitly asks.
 - **Secrets:** never read, print or commit `.env` files or credentials, and never ask the user to
   paste them in chat. `.env.example` holds placeholders only.
 - **Open questions:** business ambiguities (the "Open questions" section of `docs/spec.md`) are not

@@ -148,7 +148,7 @@ Dentro de esa transacción se hace: bloquear al usuario, buscar el instrumento y
 
 ## 2.5 Qué cambiamos en la base de datos (y qué no)
 
-La base inicial era muy permisiva: sin restricciones de valores, sin índices (solo claves primarias), con campos de texto libre donde solo tienen sentido unos pocos valores. Hicimos **una migración** (`002`), versionada y con instrucciones para deshacerla, que agrega:
+La base inicial era muy permisiva: sin restricciones de valores, sin índices (solo claves primarias), con campos de texto libre donde solo tienen sentido unos pocos valores. Hicimos **un cambio de esquema** (el archivo `002`), con instrucciones para deshacerlo, que agrega:
 
 | Cambio | Para qué sirve | Sin esto |
 | --- | --- | --- |
@@ -162,15 +162,15 @@ La base inicial era muy permisiva: sin restricciones de valores, sin índices (s
 
 **Lo que no tocamos**: no agregamos columnas ni tablas nuevas y no cambiamos tipos de datos. En particular, **no hay tabla de posiciones**. Las restricciones se eligieron como "CHECK" y no como tipos enumerados porque permiten cambiar los valores permitidos con un simple `ALTER`.
 
-**Cómo se aplican**: son archivos SQL numerados en `db/migrations/`, que aplica un pequeño programa (`npm run db:migrate`) y que registra qué migraciones ya corrió. Cada una se aplica dentro de una transacción: si falla, no queda nada a medias.
+**Cómo se aplican**: son archivos SQL numerados en `db/init/`. Al crear la base local con Docker Compose por primera vez se cargan en orden: primero el esquema y los datos originales (`001`) y después las restricciones e índices (`002`). No hay ninguna herramienta de migraciones ni tabla de control: la base es local y descartable, y para incorporar un cambio se la recrea (`docker compose down -v`). Aplicarlo en una base que ya existe es una acción manual, con `psql` y en una sola transacción (si algo falla, no queda nada a medias).
 
-**El riesgo de aplicarla en una base que ya existe**: si ahí hubiera datos que no cumplen las restricciones (por ejemplo un estado en minúsculas, o dos instrumentos con el mismo ticker), la migración falla —sin dejar cambios parciales— y, además, otros sistemas que escriban en la misma base con valores distintos empezarían a recibir errores. Por eso existe un archivo de **verificación previa** (`002-precheck.sql`), que solo lee y lista las filas problemáticas. Debe devolver cero filas antes de migrar cualquier base remota, y esa decisión es del dueño del proyecto.
+**El riesgo de aplicarla en una base que ya existe**: si ahí hubiera datos que no cumplen las restricciones (por ejemplo un estado en minúsculas, o dos instrumentos con el mismo ticker), el cambio falla —sin dejar cambios parciales— y, además, otros sistemas que escriban en la misma base con valores distintos empezarían a recibir errores. Por eso existe un archivo de **verificación previa** (`002-precheck.sql`), que solo lee y lista las filas problemáticas. Sus primeras cinco consultas deben devolver cero filas antes de aplicar el cambio a cualquier base remota, y esa decisión es del dueño del proyecto.
 
 ## 2.6 Base local con Docker Compose, separada de producción
 
 Decidimos que **todo el desarrollo y las pruebas corran contra una base local descartable**, levantada con Docker Compose, y que producción use una base remota distinta. Los motivos:
 
-- **Seguridad de los datos reales**: una prueba mal escrita o una migración a medias nunca debe poder tocar datos de clientes.
+- **Seguridad de los datos reales**: una prueba mal escrita o un cambio de esquema a medias nunca debe poder tocar datos de clientes.
 - **Repetibilidad**: la base local se crea desde cero con los datos de ejemplo; cualquiera obtiene los mismos números. Se resetea con un comando (`docker compose down -v`).
 - **Velocidad y autonomía**: no hace falta acceso a la red ni credenciales de nadie para desarrollar.
 
@@ -178,7 +178,7 @@ Esta separación no depende de la buena voluntad: hay varias barreras.
 
 - El Compose contiene **solo** la base. La aplicación no está en el Compose porque en producción la despliega SRE como imagen.
 - La base local escucha solo en `127.0.0.1`, en el puerto **5433** (para no chocar con un Postgres que ya tenga la persona en el 5432), con usuario y clave descartables.
-- El programa de migraciones **se niega** a correr contra cualquier servidor que no sea local, salvo que una persona lo fuerce con una opción explícita.
+- No existe ninguna herramienta en el proyecto que cambie el esquema de una base remota: los cambios de esquema se cargan solo al crear la base local, y aplicarlos en otra base es una acción manual y deliberada, con verificación previa.
 - Las pruebas funcionales crean su propia base temporal (`portfolio_test`) dentro del Postgres local y la borran al terminar; también se niegan a correr si la dirección configurada no es local.
 - Las credenciales: los archivos `.env` están excluidos del repositorio, el repositorio solo contiene un `.env.example` con valores de relleno, y la configuración compartida del asistente de código (`.claude/settings.json`) le niega la lectura de esos archivos con su herramienta de lectura (es una protección parcial: no bloquea, por ejemplo, un `cat` desde la terminal). La imagen de producción no lleva ninguna configuración adentro: recibe todo por variables de entorno.
 
@@ -219,7 +219,7 @@ Cosas que conviene saber para continuar el proyecto:
 **Operación**
 
 - **Chequeo de "vivo" separado del de salud**: hoy `/health` incluye la base. Si el orquestador lo usa para decidir si reiniciar el servicio, una caída de la base reiniciaría todas las instancias. Se debe usar como chequeo de "listo para recibir tráfico" o agregar uno aparte.
-- **Cómo llegan las migraciones a producción**: la imagen no incluye el programa de migraciones. SRE necesita ejecutar los archivos SQL a mano o acordar un paso en el despliegue.
+- **Cómo llegan los cambios de esquema a producción**: no hay un paso automático. SRE debe ejecutar el archivo `002` a mano, después de la verificación previa, o acordar un paso en el despliegue.
 - **Comparar la base real contra el SQL inicial**: no hicimos esa verificación porque requiere acceso a la base remota, que no usamos a propósito.
 - **Métricas y trazas**: hoy solo hay logs.
 - **Logs más livianos**: cada línea de log repite los datos completos del pedido HTTP; es verboso pero funcional.
@@ -241,7 +241,7 @@ Cosas que conviene saber para continuar el proyecto:
 ## 2.11 Lista corta antes de producción
 
 1. Decidir autenticación y límite de pedidos.
-2. Acordar cómo se aplican las migraciones y correr la verificación previa contra la base real.
+2. Acordar cómo se aplican los cambios de esquema y correr la verificación previa contra la base real.
 3. Comparar el esquema real contra el inicial.
 4. Definir los chequeos de salud del orquestador.
 5. Ejecutar la colección de Postman contra un entorno local con el servicio recién construido.
