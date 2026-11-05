@@ -528,18 +528,17 @@
           }
         },
         {
-          "name": "Cancel the same order again",
+          "name": "Cancel the same order again (idempotent)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
-                  "const body = pm.response.json();",
-                  "pm.test('error code is ORDER_NOT_CANCELLABLE', () => pm.expect(body.error).to.eql('ORDER_NOT_CANCELLABLE'));",
-                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
-                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const order = pm.response.json();",
+                  "pm.test('succeeds again and the order stays CANCELLED', () => pm.expect(order.status).to.eql('CANCELLED'));",
+                  "pm.test('it is the same order', () => pm.expect(order.id).to.eql(Number(pm.collectionVariables.get('limitOrderId'))));"
                 ]
               }
             }
@@ -552,7 +551,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["users", "{{userId}}", "orders", "{{limitOrderId}}", "cancel"]
             },
-            "description": "A cancelled order cannot be cancelled again."
+            "description": "Repeating a cancellation is safe: it answers 200 with the same order and changes nothing, so clients can retry after a network failure."
           }
         },
         {
