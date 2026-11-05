@@ -324,7 +324,8 @@
                   "});",
                   "pm.test('executes at a 2-decimal market price', () => pm.expect(order.price).to.match(/^-?\\d+\\.\\d{2}$/));",
                   "pm.test('has no rejection reason', () => pm.expect(order.reason).to.eql(undefined));",
-                  "pm.test('quantity is the one requested', () => pm.expect(order.size).to.eql(1));"
+                  "pm.test('quantity is the one requested', () => pm.expect(order.size).to.eql(1));",
+                  "pm.collectionVariables.set('filledOrderId', order.id);"
                 ]
               }
             }
@@ -369,7 +370,8 @@
                   "  pm.expect(order.id).to.be.a('number');",
                   "  pm.expect(new Date(order.datetime).toISOString()).to.eql(order.datetime);",
                   "});",
-                  "pm.test('keeps the price sent by the user', () => pm.expect(order.price).to.eql('100.00'));"
+                  "pm.test('keeps the price sent by the user', () => pm.expect(order.price).to.eql('100.00'));",
+                  "pm.collectionVariables.set('limitOrderId', order.id);"
                 ]
               }
             }
@@ -490,6 +492,151 @@
                 }
               }
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders - cancellation",
+      "description": "Cancellation of NEW orders. Run after `Orders - accepted`: it uses the order ids stored by that folder.",
+      "item": [
+        {
+          "name": "Cancel a NEW LIMIT order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const order = pm.response.json();",
+                  "pm.test('order is the one created by the LIMIT BUY request', () => pm.expect(order.id).to.eql(Number(pm.collectionVariables.get('limitOrderId'))));",
+                  "pm.test('order is now CANCELLED', () => pm.expect(order.status).to.eql('CANCELLED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders/{{limitOrderId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders", "{{limitOrderId}}", "cancel"]
+            },
+            "description": "Only NEW orders can be cancelled. The pesos it committed are released automatically. Depends on `LIMIT BUY by quantity`, which stores the order id in `limitOrderId`."
+          }
+        },
+        {
+          "name": "Cancel the same order again",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is ORDER_NOT_CANCELLABLE', () => pm.expect(body.error).to.eql('ORDER_NOT_CANCELLABLE'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders/{{limitOrderId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders", "{{limitOrderId}}", "cancel"]
+            },
+            "description": "A cancelled order cannot be cancelled again."
+          }
+        },
+        {
+          "name": "Cancel a FILLED order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is ORDER_NOT_CANCELLABLE', () => pm.expect(body.error).to.eql('ORDER_NOT_CANCELLABLE'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders/{{filledOrderId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders", "{{filledOrderId}}", "cancel"]
+            },
+            "description": "An executed order cannot be cancelled. Depends on `MARKET BUY by quantity`."
+          }
+        },
+        {
+          "name": "Cancel an unknown order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is NOT_FOUND', () => pm.expect(body.error).to.eql('NOT_FOUND'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders/999999/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders", "999999", "cancel"]
+            },
+            "description": "The order does not exist for this user (an order of another user is also a 404)."
+          }
+        },
+        {
+          "name": "Cancel with a malformed order id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is VALIDATION_ERROR', () => pm.expect(body.error).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders/abc/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders", "abc", "cancel"]
+            },
+            "description": "The order id must be a positive integer."
           }
         }
       ]
@@ -934,6 +1081,16 @@
           }
         }
       ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "limitOrderId",
+      "value": ""
+    },
+    {
+      "key": "filledOrderId",
+      "value": ""
     }
   ]
 }
