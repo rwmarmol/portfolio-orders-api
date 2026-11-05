@@ -21,7 +21,7 @@ const moneyString = (maxIntegerDigits: number) =>
     )
     .refine((value) => Number(value) > 0, 'must be greater than zero');
 
-export const createOrderSchema = z
+const orderBodySchema = z
   .strictObject({
     instrumentId: z.number().int().min(1).max(INT4_MAX),
     side: z.enum(['BUY', 'SELL']),
@@ -41,10 +41,22 @@ export const createOrderSchema = z
     if (order.type === 'LIMIT' && order.price === undefined) {
       ctx.addIssue({ code: 'custom', message: 'required for LIMIT orders', path: ['price'] });
     }
-    if (order.type === 'MARKET' && order.price !== undefined) {
-      ctx.addIssue({ code: 'custom', message: 'not allowed for MARKET orders', path: ['price'] });
-    }
   });
+
+/**
+ * A MARKET order executes at the market price, so a `price` sent with it is ignored (D11): it is
+ * dropped before validation, so even a malformed value cannot make the request fail.
+ */
+function dropPriceFromMarketOrder(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
+  const body = raw as Record<string, unknown>;
+  if (body.type !== 'MARKET' || !('price' in body)) return raw;
+  const withoutPrice = { ...body };
+  delete withoutPrice.price;
+  return withoutPrice;
+}
+
+export const createOrderSchema = z.preprocess(dropPriceFromMarketOrder, orderBodySchema);
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 

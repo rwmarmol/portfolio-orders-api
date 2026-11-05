@@ -18,11 +18,26 @@ describe('createOrderSchema', () => {
     expect(parsed).toMatchObject({ amount: '1500.5', price: '930.10' });
   });
 
+  it('ignores a price sent with a MARKET order instead of failing', () => {
+    const parsed = createOrderSchema.parse({ ...base, price: '10' });
+    expect(parsed).toEqual(base);
+    expect('price' in parsed).toBe(false);
+  });
+
+  it('ignores even a malformed price on a MARKET order', () => {
+    expect(createOrderSchema.safeParse({ ...base, price: 'not-a-number' }).success).toBe(true);
+  });
+
+  it('still validates the price of a LIMIT order', () => {
+    expect(
+      createOrderSchema.safeParse({ ...base, type: 'LIMIT', price: 'not-a-number' }).success,
+    ).toBe(false);
+  });
+
   it.each([
     ['both quantity and amount', { ...base, amount: '100' }],
     ['neither quantity nor amount', { instrumentId: 47, side: 'BUY', type: 'MARKET' }],
     ['LIMIT without price', { ...base, type: 'LIMIT' }],
-    ['MARKET with price', { ...base, price: '10' }],
     ['fractional quantity', { ...base, quantity: 1.5 }],
     ['zero quantity', { ...base, quantity: 0 }],
     ['quantity above INT range', { ...base, quantity: 2_147_483_648 }],

@@ -65,6 +65,14 @@ describe('POST /users/:userId/orders (database)', () => {
     expect(body.positions[0]).toMatchObject({ instrumentId: PRICED_INSTRUMENT_ID, quantity: 10 });
   });
 
+  it('ignores a price sent with a MARKET order and executes at the market price', async () => {
+    const userId = await createUser(pool);
+    await fund(pool, userId, 100_000);
+
+    const res = await post(userId, { ...market('BUY', 1), price: '1.00' }).expect(201);
+    expect(res.body).toMatchObject({ status: 'FILLED', price: close });
+  });
+
   it('stores a LIMIT BUY as NEW with the user price and commits the funds', async () => {
     const userId = await createUser(pool);
     await fund(pool, userId, 100_000);
