@@ -468,7 +468,7 @@
             "description": "Executes immediately at the latest close, which is stored as the order price.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"quantity\": 1\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -514,7 +514,7 @@
             "description": "Stored as NEW with the user's price. Nothing executes it (no market simulation); its funds count as committed.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"quantity\": 1,\n  \"price\": \"100.00\"\n}",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"quantity\": 1,\n  \"price\": \"100.00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -563,7 +563,7 @@
             "description": "The amount is converted into the maximum whole number of shares.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"amount\": \"5000\"\n}",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"amount\": \"5000\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -608,7 +608,7 @@
             "description": "A MARKET order executes at the market price; a price sent with it is ignored instead of failing.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1,\n  \"price\": \"1.00\"\n}",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"quantity\": 1,\n  \"price\": \"1.00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -652,7 +652,236 @@
             "description": "Succeeds because the user holds shares of the instrument (net of NEW LIMIT SELL commitments).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"SELL\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"SELL\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders - idempotency",
+      "description": "Idempotent order creation: every order carries a required `clientOrderId`.",
+      "item": [
+        {
+          "name": "MARKET BUY with a clientOrderId",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('clientOrderId', 'postman-' + Date.now() + '-' + Math.floor(Math.random() * 1e6));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const order = pm.response.json();",
+                  "pm.test('order is stored as FILLED', () => pm.expect(order.status).to.eql('FILLED'));",
+                  "pm.test('order has an id and an ISO datetime', () => {",
+                  "  pm.expect(order.id).to.be.a('number');",
+                  "  pm.expect(new Date(order.datetime).toISOString()).to.eql(order.datetime);",
+                  "});",
+                  "pm.test('the order carries the clientOrderId', () => pm.expect(order.clientOrderId).to.eql(pm.collectionVariables.get('clientOrderId')));",
+                  "pm.collectionVariables.set('idempotentOrderId', order.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "The client chooses a required id for each order. If the request is repeated with the same id, no second order is created. The id is generated in the pre-request script of this request.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{clientOrderId}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Retry the same request (idempotent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const order = pm.response.json();",
+                  "pm.test('returns the order that already exists', () => pm.expect(order.id).to.eql(Number(pm.collectionVariables.get('idempotentOrderId'))));",
+                  "pm.test('the order is unchanged', () => { pm.expect(order.status).to.eql('FILLED'); pm.expect(order.size).to.eql(1); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "A repeated clientOrderId answers 200 with the original order instead of creating another one (a new order answers 201).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{clientOrderId}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Reuse the clientOrderId for a different order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is IDEMPOTENCY_KEY_REUSED', () => pm.expect(body.error).to.eql('IDEMPOTENCY_KEY_REUSED'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "Reusing an id with different parameters is refused and nothing is stored.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{clientOrderId}}\",\n  \"quantity\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Missing clientOrderId",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is VALIDATION_ERROR', () => pm.expect(body.error).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));",
+                  "pm.test('the message names the missing field', () => pm.expect(body.message).to.include('clientOrderId'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "The clientOrderId is required: it is what makes retrying an order safe.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Malformed clientOrderId",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('error code is VALIDATION_ERROR', () => pm.expect(body.error).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('error body carries a request id', () => pm.expect(body.requestId).to.be.a('string'));",
+                  "pm.test('x-request-id header is returned', () => pm.expect(pm.response.headers.get('x-request-id')).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "orders"]
+            },
+            "description": "Only letters, digits and . _ : - are allowed, up to 64 characters.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"has spaces\",\n  \"quantity\": 1\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -847,7 +1076,7 @@
             "description": "A business rejection: the order is stored as REJECTED and answered with 201.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 100000000\n}",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"quantity\": 100000000\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -892,7 +1121,7 @@
             "description": "LIMIT orders are validated at creation too.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"quantity\": 100000000,\n  \"price\": \"1000.00\"\n}",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"quantity\": 100000000,\n  \"price\": \"1000.00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -937,7 +1166,7 @@
             "description": "Seed user 1 holds -10 of instrument 31, so any sale is rejected.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{negativePositionInstrumentId}},\n  \"side\": \"SELL\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}",
+              "raw": "{\n  \"instrumentId\": {{negativePositionInstrumentId}},\n  \"side\": \"SELL\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"quantity\": 1\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -985,7 +1214,7 @@
             "description": "ARS is the cash instrument and cannot be traded.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{cashInstrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}",
+              "raw": "{\n  \"instrumentId\": {{cashInstrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"quantity\": 1\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1027,7 +1256,7 @@
             "description": "The resulting quantity would be zero.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"amount\": \"1\"\n}",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"amount\": \"1\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1069,7 +1298,7 @@
             "description": "Send exactly one of quantity or amount.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1,\n  \"amount\": \"100\"\n}",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"quantity\": 1,\n  \"amount\": \"100\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1111,7 +1340,7 @@
             "description": "A LIMIT order requires a price.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"quantity\": 1\n}",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"quantity\": 1\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1153,7 +1382,7 @@
             "description": "The instrument in the body does not exist.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": 999999,\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}",
+              "raw": "{\n  \"instrumentId\": 999999,\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"quantity\": 1\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1195,7 +1424,7 @@
             "description": "The user in the path does not exist.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"quantity\": 1\n}",
+              "raw": "{\n  \"instrumentId\": {{instrumentId}},\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"clientOrderId\": \"{{$guid}}\",\n  \"quantity\": 1\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1218,6 +1447,14 @@
     },
     {
       "key": "firstPageTickers",
+      "value": ""
+    },
+    {
+      "key": "clientOrderId",
+      "value": ""
+    },
+    {
+      "key": "idempotentOrderId",
       "value": ""
     }
   ]

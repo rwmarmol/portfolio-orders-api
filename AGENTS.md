@@ -44,7 +44,7 @@ src/
   health/          GET /health
   domain/          pure functions only (no I/O, no Nest, no pg)
 test/              e2e tests (*.e2e-spec.ts, no DB) and database-backed tests (*.db-spec.ts)
-db/init/           001 baseline schema and seed, 002 constraints and indexes; loaded in order by docker compose on first start
+db/init/           001 baseline schema and seed, 002 constraints and indexes, 003 order idempotency column; loaded in order by docker compose on first start
 db/precheck/       read-only checks to run before applying db/init/002 to an existing database
 docs/              spec and decisions
 ```

@@ -1,6 +1,6 @@
 import { D, Dec, DecValue } from './decimal';
 import { InvalidOrderInputError } from './errors';
-import type { OrderType } from './types';
+import type { OrderStatus, OrderType, Side } from './types';
 
 /** `orders.size` is an INT column. */
 const MAX_SIZE = 2_147_483_647;
@@ -114,4 +114,60 @@ export function evaluateOrder(input: EvaluateOrderInput): OrderEvaluation {
     return { status: 'REJECTED', reason: 'INSUFFICIENT_HOLDINGS' };
   }
   return { status: input.type === 'MARKET' ? 'FILLED' : 'NEW' };
+}
+
+/**
+ * Why a stored REJECTED order was rejected, derived from the order itself: a missing price means
+ * no market price; otherwise a BUY lacked funds and a SELL lacked holdings. Lets a repeated
+ * request be answered with the same reason without storing it.
+ */
+export function rejectionReasonOf(order: {
+  side: Side;
+  status: OrderStatus;
+  price: string | null;
+}): RejectionReason | undefined {
+  if (order.status !== 'REJECTED') return undefined;
+  if (order.price === null) return 'NO_MARKET_PRICE';
+  return order.side === 'SELL' ? 'INSUFFICIENT_HOLDINGS' : 'INSUFFICIENT_FUNDS';
+}
+
+export interface StoredOrderSummary {
+  instrumentId: number;
+  side: Side;
+  type: OrderType;
+  size: number;
+  price: string | null;
+}
+
+export interface OrderRequestSummary {
+  instrumentId: number;
+  side: 'BUY' | 'SELL';
+  type: OrderType;
+  quantity?: number | undefined;
+  price?: string | undefined;
+}
+
+/**
+ * Whether a request that reuses a clientOrderId describes the order already stored under it
+ * (D14). Compares instrument, side and type, plus the quantity when it was sent and the price of
+ * a LIMIT order. An amount is not compared: the quantity it produced depended on the price at
+ * that moment.
+ */
+export function orderMatchesRequest(
+  stored: StoredOrderSummary,
+  request: OrderRequestSummary,
+): boolean {
+  if (
+    stored.instrumentId !== request.instrumentId ||
+    stored.side !== request.side ||
+    stored.type !== request.type
+  ) {
+    return false;
+  }
+  if (request.quantity !== undefined && stored.size !== request.quantity) return false;
+  if (request.type === 'LIMIT') {
+    if (request.price === undefined || stored.price === null) return false;
+    if (!new D(stored.price).eq(request.price)) return false;
+  }
+  return true;
 }

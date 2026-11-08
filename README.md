@@ -13,7 +13,7 @@ considered but not implemented).
 | `GET /health` | Liveness and database check |
 | `GET /users/:userId/portfolio` | Currency (`ARS`), available, committed and buyable amounts, total value (`totalIsPartial` when a position has no price) and positions with returns |
 | `GET /instruments?q=&limit=&offset=` | Search by ticker or name (partial, case-insensitive), or list every tradable instrument when `q` is omitted. Paginated: `limit` default 20, max 50; response `{ items, total, limit, offset }` |
-| `POST /users/:userId/orders` | Submit a BUY or SELL, MARKET or LIMIT, by `quantity` or `amount` |
+| `POST /users/:userId/orders` | Submit a BUY or SELL, MARKET or LIMIT, by `quantity` or `amount`. A `clientOrderId` chosen by the client is required, which makes retries safe: repeating it returns the existing order (200) instead of creating another |
 | `POST /users/:userId/orders/:orderId/cancel` | Cancel an order that is still `NEW` (idempotent; 409 if it is `FILLED` or `REJECTED`) |
 
 ```bash
@@ -21,7 +21,7 @@ curl localhost:3000/users/1/portfolio
 curl 'localhost:3000/instruments?q=pa'
 curl 'localhost:3000/instruments?limit=20&offset=20'   # second page of the catalog
 curl -X POST localhost:3000/users/1/orders -H 'content-type: application/json' \
-  -d '{"instrumentId":47,"side":"BUY","type":"MARKET","quantity":10}'
+  -d '{"instrumentId":47,"side":"BUY","type":"MARKET","quantity":10,"clientOrderId":"my-order-001"}'
 ```
 
 Rejected orders (insufficient funds or holdings, no market price) are stored and answered with 201,
@@ -48,7 +48,7 @@ The database is published on host port 5433 to avoid clashing with a local Postg
 
 ## Postman
 
-`docs/postman/` holds the collection (31 requests, one per case, with assertions) and a `local`
+`docs/postman/` holds the collection (36 requests, one per case, with assertions) and a `local`
 environment (`baseUrl`, `userId`, ...). Import both into Postman, or run them from the terminal:
 
 ```bash
@@ -63,15 +63,16 @@ collection can be run repeatedly.
 ## Database
 
 `docker compose up` creates the local Postgres from the SQL files in `db/init/`, which run in order
-on the first start only: `001-schema-and-seed.sql` (the provided schema and data) and
-`002-constraints-and-indexes.sql` (constraints and indexes, justified in `docs/decisions.md`, D8).
+on the first start only: `001-schema-and-seed.sql` (the provided schema and data),
+`002-constraints-and-indexes.sql` (constraints and indexes, D8) and `003-order-idempotency.sql`
+(the `clientOrderId` column of `orders`, D14), all justified in `docs/decisions.md`.
 There is no migration tool: to change the schema, edit the SQL and recreate the database with
 `docker compose down -v && docker compose up -d --wait`.
 
-To apply the changes of `002` to an existing database, first run the read-only
-`db/precheck/002-precheck.sql` (the first five queries must return zero rows), get an explicit
-decision from the project owner, and then run
-`psql -v ON_ERROR_STOP=1 --single-transaction -f db/init/002-constraints-and-indexes.sql`.
+To apply the changes to an existing database, first run the read-only `db/precheck/002-precheck.sql`
+(the first five queries must return zero rows), get an explicit decision from the project owner, and
+then run `psql -v ON_ERROR_STOP=1 --single-transaction -f` with `db/init/002-constraints-and-indexes.sql`
+and `db/init/003-order-idempotency.sql` (`003` is additive and needs no precheck).
 
 ## Container image (deployment)
 

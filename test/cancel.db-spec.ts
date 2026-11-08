@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import request from 'supertest';
 import {
@@ -26,7 +27,12 @@ describe('POST /users/:userId/orders/:orderId/cancel (database)', () => {
 
   const http = () => request(app.getHttpServer());
   const submit = async (userId: number, body: object) =>
-    (await http().post(`/users/${userId}/orders`).send(body).expect(201)).body;
+    (
+      await http()
+        .post(`/users/${userId}/orders`)
+        .send({ clientOrderId: `t-${randomUUID()}`, ...body })
+        .expect(201)
+    ).body;
   const cancel = (userId: number, orderId: number | string) =>
     http().post(`/users/${userId}/orders/${orderId}/cancel`);
   const portfolio = async (userId: number) =>

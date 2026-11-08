@@ -7,6 +7,8 @@ import {
   buyableAmount,
   evaluateOrder,
   evaluateCancellation,
+  orderMatchesRequest,
+  rejectionReasonOf,
   resolveQuantity,
   sellableShares,
 } from '../domain';
@@ -31,11 +33,29 @@ export class OrdersService {
   /**
    * Validates funds or holdings and inserts the order in a single transaction, under a per-user
    * lock (D1). A business rejection is stored as REJECTED and returned, not thrown.
+   *
+   * Idempotent through the client's `clientOrderId` (D14): a retry with the same id returns the
+   * order already created, flagged as `replayed`, and creates nothing. The lookup runs under the
+   * per-user lock, so simultaneous retries are serialized and only the first one creates.
    */
-  async submit(userId: number, input: CreateOrderInput): Promise<OrderResponse> {
-    const { stored, reason } = await this.transactions.run(async (db) => {
+  async submit(
+    userId: number,
+    input: CreateOrderInput,
+  ): Promise<{ order: OrderResponse; replayed: boolean }> {
+    const { stored, reason, replayed } = await this.transactions.run(async (db) => {
       if (!(await this.users.lockForUpdate(userId, db))) {
         throw new NotFoundError(`User ${userId} not found`);
+      }
+
+      const existing = await this.orders.findByClientOrderId(userId, input.clientOrderId, db);
+      if (existing !== undefined) {
+        if (!orderMatchesRequest(existing, input)) {
+          throw new ConflictError(
+            `clientOrderId ${input.clientOrderId} was already used for a different order`,
+            'IDEMPOTENCY_KEY_REUSED',
+          );
+        }
+        return { stored: existing, reason: rejectionReasonOf(existing), replayed: true };
       }
 
       const instrument = await this.instruments.findById(input.instrumentId, db);
@@ -91,10 +111,11 @@ export class OrdersService {
           type: input.type,
           side: input.side,
           status: evaluation.status,
+          clientOrderId: input.clientOrderId,
         },
         db,
       );
-      return { stored, reason: evaluation.reason };
+      return { stored, reason: evaluation.reason, replayed: false };
     });
 
     this.logger.log(
@@ -107,9 +128,9 @@ export class OrdersService {
         status: stored.status,
         reason,
       },
-      'order.created',
+      replayed ? 'order.replayed' : 'order.created',
     );
-    return presentOrder(stored, reason);
+    return { order: presentOrder(stored, reason), replayed };
   }
 
   /**
