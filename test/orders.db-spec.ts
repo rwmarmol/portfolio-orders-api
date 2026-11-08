@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import request from 'supertest';
 import { D, DecValue } from '../src/domain';
@@ -31,8 +32,11 @@ describe('POST /users/:userId/orders (database)', () => {
     await pool.end();
   });
 
+  // Every order needs a clientOrderId (D14); a fresh one by default, overridable by the test.
   const post = (userId: number, body: object) =>
-    request(app.getHttpServer()).post(`/users/${userId}/orders`).send(body);
+    request(app.getHttpServer())
+      .post(`/users/${userId}/orders`)
+      .send({ clientOrderId: `t-${randomUUID()}`, ...body });
   const portfolio = async (userId: number) =>
     (await request(app.getHttpServer()).get(`/users/${userId}/portfolio`).expect(200)).body;
   const money = (value: DecValue) => new D(value).toFixed(2);

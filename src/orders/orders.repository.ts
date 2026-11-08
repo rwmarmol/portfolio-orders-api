@@ -13,6 +13,8 @@ export interface NewOrder {
   type: OrderType;
   side: 'BUY' | 'SELL';
   status: 'NEW' | 'FILLED' | 'REJECTED';
+  /** Idempotency key chosen by the client; unique per user (D14). */
+  clientOrderId: string;
 }
 
 export interface StoredOrder {
@@ -25,6 +27,8 @@ export interface StoredOrder {
   size: number;
   price: string | null;
   datetime: Date;
+  /** Null only for orders created before idempotency keys existed. */
+  clientOrderId: string | null;
 }
 
 interface OrderRow extends Omit<OrderRecord, 'price'> {
@@ -37,7 +41,8 @@ const STORED_ORDER_COLUMNS = `id,
                  instrumentid AS "instrumentId",
                  side, type, status, size,
                  price::text AS price,
-                 datetime`;
+                 datetime,
+                 clientorderid AS "clientOrderId"`;
 
 @Injectable()
 export class OrdersRepository {
@@ -69,8 +74,8 @@ export class OrdersRepository {
   /** Inserts an order. Must run inside the order transaction, under the per-user lock. */
   async insert(order: NewOrder, db: Queryable): Promise<StoredOrder> {
     const { rows } = await db.query<StoredOrder>(
-      `INSERT INTO orders (instrumentid, userid, size, price, type, side, status, datetime)
-       VALUES ($1, $2, $3, $4::numeric, $5, $6, $7, now() AT TIME ZONE 'UTC')
+      `INSERT INTO orders (instrumentid, userid, size, price, type, side, status, clientorderid, datetime)
+       VALUES ($1, $2, $3, $4::numeric, $5, $6, $7, $8, now() AT TIME ZONE 'UTC')
        RETURNING ${STORED_ORDER_COLUMNS}`,
       [
         order.instrumentId,
@@ -80,6 +85,7 @@ export class OrdersRepository {
         order.type,
         order.side,
         order.status,
+        order.clientOrderId,
       ],
     );
     const stored = rows[0];
@@ -110,6 +116,22 @@ export class OrdersRepository {
         WHERE id = $1 AND status = 'NEW'
         RETURNING ${STORED_ORDER_COLUMNS}`,
       [orderId],
+    );
+    return rows[0];
+  }
+
+  /**
+   * The order a user already created with a given clientOrderId, if any (D14). Served by the
+   * partial unique index on (userid, clientorderid).
+   */
+  async findByClientOrderId(
+    userId: number,
+    clientOrderId: string,
+    db: Queryable,
+  ): Promise<StoredOrder | undefined> {
+    const { rows } = await db.query<StoredOrder>(
+      `SELECT ${STORED_ORDER_COLUMNS} FROM orders WHERE userid = $1 AND clientorderid = $2`,
+      [userId, clientOrderId],
     );
     return rows[0];
   }

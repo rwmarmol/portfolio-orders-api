@@ -4,7 +4,7 @@
 
 Este README, a diferencia del `README.md` en la raíz del proyecto, está enfocado en ofrecer un resumen directo de mi mano sobre las decisiones técnicas y de negocio tomadas por mí durante la ejecución del challenge. Para correr el proyecto seguí los pasos del `README.md` de la raíz.
 
-El detalle completo de las decisiones y trade-offs está documentado en el directorio `/docs`: `decisiones-y-consideraciones.md` (en español, en lenguaje natural y dividido en negocio y técnica) y `decisions.md` (registro técnico formal, en inglés). También podríamos conversarlas si hay una instancia extra donde nos reunamos para revisar.
+El detalle completo de las decisiones y trade-offs está documentado en el directorio `/docs`: `decisiones-y-consideraciones.md` y `decisions.md`. Hay otras supociciones y calculos que estoy dispuesto a conversar si existe una instancia siguiente de revisión.
 
 ## Aspectos base del proyecto
 El proyecto fue pensado como un proyecto real en un equipo de trabajo y no como un challenge técnico, por lo que la documentación y la configuración de agentes nunca hacen referencia a ello, con el fin de mantener un estándar de proyecto real para producción (a excepción de usar SQL directo con `pg`, ver más abajo) y ofrecer la posibilidad de que nuevos equipos y agentes puedan tener contexto sobre el objetivo del proyecto y las decisiones técnicas tomadas durante el desarrollo.

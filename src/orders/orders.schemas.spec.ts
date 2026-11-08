@@ -1,6 +1,12 @@
 import { createOrderSchema, orderParamSchema } from './orders.schemas';
 
-const base = { instrumentId: 47, side: 'BUY', type: 'MARKET', quantity: 10 };
+const base = {
+  instrumentId: 47,
+  side: 'BUY',
+  type: 'MARKET',
+  quantity: 10,
+  clientOrderId: 'order-1',
+};
 
 describe('createOrderSchema', () => {
   it('accepts a MARKET order by quantity', () => {
@@ -14,8 +20,34 @@ describe('createOrderSchema', () => {
       type: 'LIMIT',
       amount: 1500.5,
       price: '930.10',
+      clientOrderId: 'order-2',
     });
     expect(parsed).toMatchObject({ amount: '1500.5', price: '930.10' });
+  });
+
+  it('accepts the allowed characters in a clientOrderId', () => {
+    expect(createOrderSchema.parse({ ...base, clientOrderId: 'order-2026.11:abc_1' })).toEqual({
+      ...base,
+      clientOrderId: 'order-2026.11:abc_1',
+    });
+  });
+
+  it('requires a clientOrderId', () => {
+    const withoutId: Record<string, unknown> = { ...base };
+    delete withoutId.clientOrderId;
+    const result = createOrderSchema.safeParse(withoutId);
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain('clientOrderId');
+  });
+
+  it.each([
+    ['empty', ''],
+    ['too long', 'x'.repeat(65)],
+    ['with spaces', 'my order'],
+    ['with a slash', 'a/b'],
+    ['not a string', 123],
+  ])('rejects a clientOrderId that is %s', (_label, clientOrderId) => {
+    expect(createOrderSchema.safeParse({ ...base, clientOrderId }).success).toBe(false);
   });
 
   it('ignores a price sent with a MARKET order instead of failing', () => {
@@ -36,7 +68,10 @@ describe('createOrderSchema', () => {
 
   it.each([
     ['both quantity and amount', { ...base, amount: '100' }],
-    ['neither quantity nor amount', { instrumentId: 47, side: 'BUY', type: 'MARKET' }],
+    [
+      'neither quantity nor amount',
+      { instrumentId: 47, side: 'BUY', type: 'MARKET', clientOrderId: 'order-1' },
+    ],
     ['LIMIT without price', { ...base, type: 'LIMIT' }],
     ['fractional quantity', { ...base, quantity: 1.5 }],
     ['zero quantity', { ...base, quantity: 0 }],
@@ -49,7 +84,10 @@ describe('createOrderSchema', () => {
     ['zero price', { ...base, type: 'LIMIT', price: '0.00' }],
     ['price in exponent notation', { ...base, type: 'LIMIT', price: 1e21 }],
     ['price above NUMERIC(10,2)', { ...base, type: 'LIMIT', price: '100000000.00' }],
-    ['non-numeric amount', { instrumentId: 47, side: 'BUY', type: 'MARKET', amount: 'abc' }],
+    [
+      'non-numeric amount',
+      { instrumentId: 47, side: 'BUY', type: 'MARKET', amount: 'abc', clientOrderId: 'order-1' },
+    ],
   ])('rejects %s', (_label, input) => {
     expect(createOrderSchema.safeParse(input).success).toBe(false);
   });

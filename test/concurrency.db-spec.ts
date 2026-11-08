@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import request from 'supertest';
 import { D } from '../src/domain';
@@ -28,7 +29,14 @@ describe('concurrent orders of one user (database)', () => {
   const buy = (userId: number, quantity: number) =>
     request(app.getHttpServer())
       .post(`/users/${userId}/orders`)
-      .send({ instrumentId: PRICED_INSTRUMENT_ID, side: 'BUY', type: 'MARKET', quantity });
+      // A distinct clientOrderId per request: these are different orders, not retries of one.
+      .send({
+        clientOrderId: `t-${randomUUID()}`,
+        instrumentId: PRICED_INSTRUMENT_ID,
+        side: 'BUY',
+        type: 'MARKET',
+        quantity,
+      });
 
   it('never over-spends: only the orders the balance can cover are filled', async () => {
     const close = await latestClose(pool, PRICED_INSTRUMENT_ID);

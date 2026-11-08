@@ -1,5 +1,12 @@
 import { InvalidOrderInputError } from './errors';
-import { assertTradable, evaluateOrder, REJECTION_MESSAGES, resolveQuantity } from './orders';
+import {
+  assertTradable,
+  evaluateOrder,
+  orderMatchesRequest,
+  REJECTION_MESSAGES,
+  rejectionReasonOf,
+  resolveQuantity,
+} from './orders';
 
 describe('resolveQuantity', () => {
   it('uses an exact quantity', () => {
@@ -90,5 +97,64 @@ describe('evaluateOrder', () => {
         InvalidOrderInputError,
       );
     });
+  });
+});
+
+describe('rejectionReasonOf', () => {
+  it('derives the reason of a stored REJECTED order', () => {
+    expect(rejectionReasonOf({ side: 'BUY', status: 'REJECTED', price: '10.00' })).toBe(
+      'INSUFFICIENT_FUNDS',
+    );
+    expect(rejectionReasonOf({ side: 'SELL', status: 'REJECTED', price: '10.00' })).toBe(
+      'INSUFFICIENT_HOLDINGS',
+    );
+    expect(rejectionReasonOf({ side: 'BUY', status: 'REJECTED', price: null })).toBe(
+      'NO_MARKET_PRICE',
+    );
+    expect(rejectionReasonOf({ side: 'SELL', status: 'REJECTED', price: null })).toBe(
+      'NO_MARKET_PRICE',
+    );
+  });
+
+  it('has no reason for orders that were not rejected', () => {
+    expect(rejectionReasonOf({ side: 'BUY', status: 'FILLED', price: '10.00' })).toBeUndefined();
+    expect(rejectionReasonOf({ side: 'BUY', status: 'NEW', price: '10.00' })).toBeUndefined();
+  });
+});
+
+describe('orderMatchesRequest', () => {
+  const stored = {
+    instrumentId: 47,
+    side: 'BUY' as const,
+    type: 'MARKET' as const,
+    size: 10,
+    price: '925.85',
+  };
+  const request = { instrumentId: 47, side: 'BUY' as const, type: 'MARKET' as const, quantity: 10 };
+
+  it('matches the same request', () => {
+    expect(orderMatchesRequest(stored, request)).toBe(true);
+  });
+
+  it.each([
+    ['another instrument', { ...request, instrumentId: 31 }],
+    ['another side', { ...request, side: 'SELL' as const }],
+    ['another type', { ...request, type: 'LIMIT' as const, price: '925.85' }],
+    ['another quantity', { ...request, quantity: 11 }],
+  ])('does not match %s', (_label, other) => {
+    expect(orderMatchesRequest(stored, other)).toBe(false);
+  });
+
+  it('does not compare an amount, whose quantity depended on the price of that moment', () => {
+    const byAmount = { instrumentId: 47, side: 'BUY' as const, type: 'MARKET' as const };
+    expect(orderMatchesRequest(stored, byAmount)).toBe(true);
+  });
+
+  it('compares the price of a LIMIT order numerically', () => {
+    const limitStored = { ...stored, type: 'LIMIT' as const, price: '900.00' };
+    const limitRequest = { ...request, type: 'LIMIT' as const };
+    expect(orderMatchesRequest(limitStored, { ...limitRequest, price: '900' })).toBe(true);
+    expect(orderMatchesRequest(limitStored, { ...limitRequest, price: '901' })).toBe(false);
+    expect(orderMatchesRequest(limitStored, limitRequest)).toBe(false);
   });
 });

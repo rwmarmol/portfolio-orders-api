@@ -29,6 +29,11 @@ const orderBodySchema = z
     quantity: z.number().int().min(1).max(INT4_MAX).optional(),
     amount: moneyString(12).optional(),
     price: moneyString(8).optional(),
+    clientOrderId: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[A-Za-z0-9._:-]+$/, 'only letters, digits and . _ : -'),
   })
   .superRefine((order, ctx) => {
     if ((order.quantity === undefined) === (order.amount === undefined)) {

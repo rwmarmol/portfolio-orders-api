@@ -64,6 +64,7 @@ La especificación tenía doce puntos sin definir. Nosotros no los decidimos: pr
 
 - **Si un instrumento no tiene precio de mercado**, una orden MARKET sobre él se guarda como rechazada con el motivo "no market price available". Si la orden era por monto, en cambio, es un error 400 y no se guarda: sin precio no se puede saber cuántas acciones son, y una orden sin cantidad válida no se puede registrar.
 - **Si una posición no tiene precio**, el portfolio no falla: devuelve la posición con el valor y los rendimientos vacíos, la deja afuera del total y avisa con `totalIsPartial: true`. Además queda un aviso en los logs con el instrumento afectado. Preferimos mostrar algo y avisar claramente que el total es parcial antes que ocultar todo el portfolio.
+- **Reintentar una orden no la duplica.** Toda orden debe traer un `clientOrderId`, un identificador que **elige el cliente** (hasta 64 caracteres): así funcionan las APIs de pagos, porque solo el cliente puede decirle al servidor que dos pedidos son la misma intención, y un identificador generado por el servidor viajaría en la respuesta que justamente se pierde en un corte de red. El cliente lo repite al reintentar. Si el servicio ya creó esa orden, devuelve la misma (con código 200 en lugar de 201), también cuando había sido rechazada, y no crea otra. Si se reutiliza el identificador para una orden distinta, responde error 409. Cada usuario tiene su propio espacio de identificadores. Un pedido sin identificador se rechaza con error 400. La deduplicación es solo por identificador: dos órdenes idénticas con identificadores distintos son dos órdenes.
 - **Se asume que todos los instrumentos cotizan en pesos (ARS).** La tabla de precios no tiene moneda y el enunciado pide precios en pesos, por eso el listado de instrumentos no indica moneda por instrumento; la respuesta del portfolio sí aclara `currency: "ARS"`. "Disponibles" significa todos los que no son ARS, incluso los dos que hoy no tienen precio de mercado (`PGR` y `IRCP`): una orden MARKET sobre ellos se rechaza.
 - **Los nombres de los importes no mencionan la moneda** (`availableAmount`, `committedAmount`, `buyableAmount`): así funcionan las plataformas que operan con varias monedas, donde cada importe va acompañado de un código de moneda. La respuesta del portfolio incluye `currency: "ARS"`. El proyecto maneja una sola moneda y no lleva saldos por moneda; si algún día hiciera falta, los nombres ya no habría que cambiarlos.
 - **Si una orden MARKET trae un precio**, se ignora en lugar de dar error: la orden se ejecuta al precio de mercado igualmente.
@@ -149,7 +150,7 @@ Dentro de esa transacción se hace: bloquear al usuario, buscar el instrumento y
 
 ## 2.5 Qué cambiamos en la base de datos (y qué no)
 
-La base inicial era muy permisiva: sin restricciones de valores, sin índices (solo claves primarias), con campos de texto libre donde solo tienen sentido unos pocos valores. Hicimos **un cambio de esquema** (el archivo `002`), con instrucciones para deshacerlo, que agrega:
+La base inicial era muy permisiva: sin restricciones de valores, sin índices (solo claves primarias), con campos de texto libre donde solo tienen sentido unos pocos valores. Hicimos **dos cambios de esquema** (los archivos `002` y `003`), cada uno con instrucciones para deshacerlo. El primero agrega:
 
 | Cambio | Para qué sirve | Sin esto |
 | --- | --- | --- |
@@ -161,9 +162,11 @@ La base inicial era muy permisiva: sin restricciones de valores, sin índices (s
 | Índice en órdenes por **usuario y estado** | Es la consulta que corre en cada portfolio y cada orden, dentro del bloqueo. | Recorrer todas las órdenes de todos los usuarios cada vez. |
 | Índice en precios por **instrumento y fecha** | Buscar el último precio de cada instrumento. | Recorrer todo el historial de precios en cada consulta. |
 
-**Lo que no tocamos**: no agregamos columnas ni tablas nuevas y no cambiamos tipos de datos. En particular, **no hay tabla de posiciones**. Las restricciones se eligieron como "CHECK" y no como tipos enumerados porque permiten cambiar los valores permitidos con un simple `ALTER`.
+El segundo (`003`) agrega **una sola columna**, `clientorderid`, en las órdenes, más un índice único por usuario y esa clave: es lo que permite que reintentar una orden no la duplique (ver 1.4). La columna admite vacíos solo porque las órdenes anteriores (como las de los datos de ejemplo) no tienen clave; la API la exige en toda orden nueva. A diferencia de la `002`, **la aplicación necesita esta columna para funcionar**: contra una base que no la tenga, enviar y cancelar órdenes falla (consultar el portfolio y buscar instrumentos siguen funcionando). Cualquier base a la que se conecte la API, incluida una remota, debe tener la `003` aplicada antes.
 
-**Cómo se aplican**: son archivos SQL numerados en `db/init/`. Al crear la base local con Docker Compose por primera vez se cargan en orden: primero el esquema y los datos originales (`001`) y después las restricciones e índices (`002`). No hay ninguna herramienta de migraciones ni tabla de control: la base es local y descartable, y para incorporar un cambio se la recrea (`docker compose down -v`). Aplicarlo en una base que ya existe es una acción manual, con `psql` y en una sola transacción (si algo falla, no queda nada a medias).
+**Lo que no tocamos**: no agregamos otras columnas ni tablas y no cambiamos tipos de datos. En particular, **no hay tabla de posiciones**. Las restricciones se eligieron como "CHECK" y no como tipos enumerados porque permiten cambiar los valores permitidos con un simple `ALTER`.
+
+**Cómo se aplican**: son archivos SQL numerados en `db/init/`. Al crear la base local con Docker Compose por primera vez se cargan en orden: primero el esquema y los datos originales (`001`), después las restricciones e índices (`002`) y por último la columna de idempotencia (`003`). No hay ninguna herramienta de migraciones ni tabla de control: la base es local y descartable, y para incorporar un cambio se la recrea (`docker compose down -v`). Aplicarlo en una base que ya existe es una acción manual, con `psql` y en una sola transacción (si algo falla, no queda nada a medias).
 
 **El riesgo de aplicarla en una base que ya existe**: si ahí hubiera datos que no cumplen las restricciones (por ejemplo un estado en minúsculas, o dos instrumentos con el mismo ticker), el cambio falla —sin dejar cambios parciales— y, además, otros sistemas que escriban en la misma base con valores distintos empezarían a recibir errores. Por eso existe un archivo de **verificación previa** (`002-precheck.sql`), que solo lee y lista las filas problemáticas. Sus primeras cinco consultas deben devolver cero filas antes de aplicar el cambio a cualquier base remota, y esa decisión es del dueño del proyecto.
 
@@ -197,9 +200,9 @@ Verificamos todo contra la base local; **en ningún momento se tocó una base re
 
 ## 2.8 Cómo se probó
 
-- **Pruebas unitarias del cerebro** y del resto del código (114 pruebas, sin base de datos). Incluyen una prueba que arranca la aplicación completa (sin base de datos), para detectar errores de cableado entre módulos.
-- **Pruebas funcionales con base de datos** (44): usan la aplicación real contra una base temporal local. Cubren cada caso de la especificación: ejecución MARKET, orden LIMIT, compra por monto, rechazo por fondos, rechazo por tenencia, compromisos de LIMIT, instrumento sin precio, el portfolio de referencia del usuario 1 y la búsqueda; más la prueba de concurrencia de 2.4, el listado paginado de instrumentos y los casos de cancelación (liberar compromisos, órdenes que no se pueden cancelar, cancelación repetida, órdenes de otro usuario y dos cancelaciones simultáneas).
-- **Colección de Postman** (`docs/postman/`): 31 pedidos, uno por caso, con 121 verificaciones. Se ejecutó repetidas veces con Newman contra una base descartable. Ojo: los pedidos de órdenes **escriben** datos, por eso solo deben apuntar a una API conectada a la base local.
+- **Pruebas unitarias del cerebro** y del resto del código (130 pruebas, sin base de datos). Incluyen una prueba que arranca la aplicación completa (sin base de datos), para detectar errores de cableado entre módulos.
+- **Pruebas funcionales con base de datos** (53): usan la aplicación real contra una base temporal local. Cubren cada caso de la especificación: ejecución MARKET, orden LIMIT, compra por monto, rechazo por fondos, rechazo por tenencia, compromisos de LIMIT, instrumento sin precio, el portfolio de referencia del usuario 1 y la búsqueda; más la prueba de concurrencia de 2.4, el listado paginado de instrumentos, la idempotencia de órdenes (reintentos simultáneos incluidos) y los casos de cancelación (liberar compromisos, órdenes que no se pueden cancelar, cancelación repetida, órdenes de otro usuario y dos cancelaciones simultáneas).
+- **Colección de Postman** (`docs/postman/`): 36 pedidos, uno por caso, con 141 verificaciones. Se ejecutó repetidas veces con Newman contra una base descartable. Ojo: los pedidos de órdenes **escriben** datos, por eso solo deben apuntar a una API conectada a la base local.
 
 ## 2.9 Limitaciones y convenciones técnicas vigentes
 
@@ -215,7 +218,6 @@ Cosas que conviene saber para continuar el proyecto:
 
 - **Autenticación y autorización**: hoy cualquiera puede operar por cualquier usuario.
 - **Límite de pedidos por segundo (throttling)**: el servicio no se debe dejar abierto públicamente tal como está.
-- **Clave de idempotencia en las órdenes**: si un cliente reintenta un `POST` por un corte de red, hoy se crearía una segunda orden. Una clave enviada por el cliente permitiría reconocer el reintento.
 
 **Operación**
 
